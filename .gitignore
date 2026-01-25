@@ -1,5 +1,6 @@
 *
-
+!.gemini/
+!.gemini/**/*
 !.config
 !.scripts
 !.local/share

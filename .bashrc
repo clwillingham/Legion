@@ -26,3 +26,4 @@ export PGO_CLIENT_CERT="/home/chris/.pgo/pgo/client.crt"
 export PGO_CLIENT_KEY="/home/chris/.pgo/pgo/client.key"
 export PGO_APISERVER_URL='https://127.0.0.1:8443'
 export PGO_NAMESPACE=pgo
+. "/home/chris/.deno/env"
