@@ -92,9 +92,19 @@ Examples:
   Can approve for agents matching a pattern:
     ["coding-*"]
 
-When an agent's tool call requires approval:
-- If the calling participant is the human user, they are prompted directly via the terminal
-- If the calling participant is another agent, the agent's execution is mechanically suspended and the approval request cascades up the communication chain automatically until it reaches a participant with approval authority (or the user). Once approved or rejected, execution resumes transparently. Agents do NOT need to understand or handle the approval protocol — it is handled by the system infrastructure.
+When an agent's tool call requires approval, the system finds the nearest participant in the communication chain with approval authority:
+- If that participant is the human user, they are prompted directly via the terminal
+- If that participant is an agent with approvalAuthority, the approval request is returned to that agent as the communicator tool_result. The agent reviews the request and uses the resolve_approval tool to approve or reject it. Once resolved, the suspended agent's session resumes and the resolve_approval tool returns the agent's final response.
+- If no one in the chain has authority, the request bubbles all the way to the user.
+
+### resolve_approval tool
+Agents with approvalAuthority MUST have the resolve_approval tool in their tools list so they can act on approval requests. When they receive an approval request as a communicator result, they should:
+1. Review the tool name, arguments, and requesting agent
+2. Decide whether to approve or reject
+3. Call resolve_approval with the requestId, decision, and optional reason
+4. The tool will return the inner agent's final response after the session completes
+
+IMPORTANT: When creating agents that have approvalAuthority, always include "resolve_approval" in their tools list. Without it, they cannot act on the approval requests they receive.
 
 ## Modifying Agents
 
@@ -115,7 +125,7 @@ Be practical and efficient. Focus on getting the collective configured correctly
       model: 'claude-sonnet-4-20250514',
       maxTokens: 4096,
     },
-    tools: ['communicator', 'spawn_agent', 'modify_agent', 'retire_agent', 'list_participants', 'list_tools'],
+    tools: ['communicator', 'spawn_agent', 'modify_agent', 'retire_agent', 'list_participants', 'list_tools', 'resolve_approval'],
     toolAuthorizations: {
       '*': { mode: 'auto' },
     },

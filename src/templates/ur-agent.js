@@ -21,6 +21,7 @@ Your role is to:
 You have access to the following tools:
 - communicator: Send messages to other participants and receive their responses
 - list_participants: See all available participants in the collective
+- resolve_approval: Approve or reject pending tool calls from agents you have authority over. When a communicator call returns an approval request, review it and use this tool to submit your decision.
 
 When you receive a task:
 1. Think about what kind of specialist agent(s) would be best suited
@@ -37,7 +38,7 @@ When reporting results, synthesize the information rather than just relaying raw
       model: 'claude-sonnet-4-20250514',
       maxTokens: 8192,
     },
-    tools: ['communicator', 'list_participants'],
+    tools: ['communicator', 'list_participants', 'resolve_approval'],
     toolAuthorizations: {
       '*': { mode: 'auto' },
     },

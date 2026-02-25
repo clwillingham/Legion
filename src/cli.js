@@ -25,6 +25,8 @@ import {
   FILE_DELETE_DEFINITION, createFileDeleteHandler,
 } from './tools/builtin/file-tools.js';
 import { LIST_TOOLS_DEFINITION, createListToolsHandler } from './tools/builtin/list-tools-tool.js';
+import { RESOLVE_APPROVAL_DEFINITION, createResolveApprovalHandler } from './tools/builtin/resolve-approval-tool.js';
+import { PendingApprovalStore } from './authorization/pending-approval-store.js';
 
 /**
  * Parse CLI arguments and dispatch.
@@ -133,6 +135,8 @@ async function handleStart(options) {
   const sessionId = await sessionManager.createSession(collective.getConfig().id);
   const repl = new Repl();
 
+  const pendingApprovalStore = new PendingApprovalStore();
+
   const communicator = new Communicator({
     collective,
     sessionManager,
@@ -141,6 +145,7 @@ async function handleStart(options) {
     sessionId,
     activityLogger,
     authEngine,
+    pendingApprovalStore,
   });
 
   // Wire communicator tool handler
@@ -207,6 +212,13 @@ async function handleStart(options) {
     'file_delete',
     FILE_DELETE_DEFINITION,
     createFileDeleteHandler(cwd)
+  );
+
+  // Register resolve_approval tool
+  toolRegistry.register(
+    'resolve_approval',
+    RESOLVE_APPROVAL_DEFINITION,
+    createResolveApprovalHandler(pendingApprovalStore, { activityLogger })
   );
 
   // Register list_tools — must be after all other tools so it can see them all

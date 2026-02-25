@@ -210,6 +210,8 @@ export class ActivityLogger {
         return input.path ? `"${input.path}"` : '.';
       case 'file_delete':
         return input.path ? `"${input.path}"` : '';
+      case 'resolve_approval':
+        return `${input.decision} (${input.requestId?.slice(0, 8)}...)`;
       default: {
         // Generic: show first string value if short
         const keys = Object.keys(input);

@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { COMMUNICATOR_DEFINITION } from '../tools/builtin/communicator-tool.js';
 import { SuspensionHandler } from '../authorization/suspension-handler.js';
 
@@ -13,7 +14,8 @@ import { SuspensionHandler } from '../authorization/suspension-handler.js';
  * When an inner agent's tool loop suspends for approval, the communicator
  * detects this via Promise.race and either:
  * - Prompts the user directly (if the sender is a user)
- * - Auto-approves (if the sender agent has approval authority)
+ * - Returns the approval request to the sender agent (if it has authority)
+ *   so the agent can review and call resolve_approval
  * - Propagates upward via the parent SuspensionHandler (if no authority)
  */
 export class Communicator {
@@ -26,6 +28,7 @@ export class Communicator {
   #maxDepth;
   #activityLogger;
   #authEngine;
+  #pendingApprovalStore;
   /** @type {string[]} Communication chain from outermost to innermost sender */
   #communicationChain = [];
 
@@ -39,6 +42,7 @@ export class Communicator {
    * @param {number} [deps.maxDepth=10] - Max nesting depth for recursive communication
    * @param {import('../repl/activity-logger.js').ActivityLogger} [deps.activityLogger]
    * @param {import('../authorization/auth-engine.js').AuthEngine} deps.authEngine
+   * @param {import('../authorization/pending-approval-store.js').PendingApprovalStore} deps.pendingApprovalStore
    */
   constructor(deps) {
     this.#collective = deps.collective;
@@ -49,6 +53,7 @@ export class Communicator {
     this.#maxDepth = deps.maxDepth || 10;
     this.#activityLogger = deps.activityLogger || null;
     this.#authEngine = deps.authEngine;
+    this.#pendingApprovalStore = deps.pendingApprovalStore;
   }
 
   /**
@@ -151,15 +156,18 @@ export class Communicator {
 
   /**
    * Race between the agent runtime completing and suspension signals.
-   * Handles approvals locally if the sender has authority, otherwise
-   * propagates upward via the parent suspension handler.
+   * Handles approvals based on who the sender is:
+   * - User sender: prompt via REPL
+   * - Agent sender with authority: return approval request as communicator result
+   *   (the agent reviews and calls resolve_approval to submit its decision)
+   * - No authority: propagate upward via parent suspension handler
    *
    * @param {Promise<string>} runPromise - The agent runtime's run() promise
    * @param {SuspensionHandler} handler - The suspension handler for this agent run
    * @param {string} senderId - Who called this agent
    * @param {string} targetId - The agent being run
    * @param {SuspensionHandler} [parentSuspensionHandler] - For cascading upward
-   * @returns {Promise<string>} The agent's final text response
+   * @returns {Promise<string>} The agent's final text response, or an approval request
    */
   async #handleWithSuspensions(runPromise, handler, senderId, targetId, parentSuspensionHandler) {
     let done = false;
@@ -214,14 +222,47 @@ export class Communicator {
         resolveDecisions(decisions);
         // Continue loop — agent may need more approvals in subsequent iterations
       } else if (canApprove) {
-        // Agent with approval authority: auto-approve all
-        // Future enhancement: ask the agent's LLM to make the decision
-        const decisions = new Map();
-        for (const pa of pendingApprovals) {
-          decisions.set(pa.toolCallId, 'approved');
-          this.#activityLogger?.approvalDecision(sender?.name || senderId, pa.toolName, 'approved');
-        }
-        resolveDecisions(decisions);
+        // Agent with approval authority: store the request and return early.
+        // The agent will see the approval details as the communicator tool_result,
+        // review them, and call resolve_approval to submit its decision.
+        // resolve_approval will wait for runPromise to complete and return the
+        // inner agent's final response.
+        const requestId = uuidv4();
+
+        this.#pendingApprovalStore.set(requestId, {
+          pendingApprovals,
+          resolve: resolveDecisions,
+          targetId,
+          runPromise,
+          handler,
+        });
+
+        this.#activityLogger?.approvalRequested(
+          pendingApprovals[0]?.requesterId || targetId,
+          pendingApprovals.map(pa => pa.toolName).join(', '),
+          sender?.name || senderId
+        );
+
+        // Format the approval request as the communicator's return value
+        const toolDetails = pendingApprovals.map(pa => {
+          const inputStr = JSON.stringify(pa.toolInput, null, 2);
+          return `  Tool: ${pa.toolName}\n  Arguments: ${inputStr}\n  Requested by: ${pa.requesterId}`;
+        }).join('\n\n');
+
+        result = [
+          `APPROVAL REQUEST (ID: ${requestId})`,
+          ``,
+          `The following tool call(s) require your approval:`,
+          ``,
+          toolDetails,
+          ``,
+          `You have the authority to approve or reject this request.`,
+          `Use the resolve_approval tool with requestId "${requestId}" and your decision ("approved" or "rejected").`,
+        ].join('\n');
+
+        // Return early — don't wait for runPromise.
+        // The inner session stays suspended until the agent calls resolve_approval.
+        break;
       } else if (parentSuspensionHandler) {
         // Cannot approve and has parent: propagate up the chain
         const parentDecisions = await parentSuspensionHandler.requestApproval(pendingApprovals);
