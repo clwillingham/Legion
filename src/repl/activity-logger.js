@@ -53,7 +53,7 @@ export class ActivityLogger {
    * Log a tool call by an agent.
    * @param {string} agentName
    * @param {string} toolName
-   * @param {Object} [input] - Tool input (truncated for display)
+   * @param {Record<string, any>} [input] - Tool input (truncated for display)
    */
   toolCall(agentName, toolName, input) {
     if (!this.#enabled) return;
@@ -185,7 +185,7 @@ export class ActivityLogger {
   /**
    * Create a human-readable summary of tool input.
    * @param {string} toolName
-   * @param {Object} input
+   * @param {Record<string, any>} input
    * @returns {string}
    */
   #summarizeInput(toolName, input) {

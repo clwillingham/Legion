@@ -36,11 +36,25 @@ export class User extends Participant {
   get medium() { return this.#medium; }
 
   /**
+   * Handle an incoming message by prompting the user via REPL.
+   *
+   * @param {import('./participant.js').HandleMessageParams & {
+   *   deps: { repl: import('../repl/repl.js').Repl }
+   * }} params
+   * @returns {Promise<string>}
+   */
+  async handleMessage({ senderName, message, deps }) {
+    deps.repl.displayMessage(senderName, message);
+    return deps.repl.prompt(`[Reply to ${senderName}] > `);
+  }
+
+  /**
    * @returns {UserConfig}
    */
   toJSON() {
     return {
       ...super.toJSON(),
+      type: /** @type {'user'} */ ('user'),
       medium: { ...this.#medium },
     };
   }

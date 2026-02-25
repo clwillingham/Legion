@@ -61,7 +61,7 @@ export class ToolExecutor {
    * @param {string} context.senderId - Who initiated communication with this agent
    * @param {string} context.callerId - The participant making the tool calls
    * @param {string[]} [context.communicationChain] - Chain of sender IDs from outermost to innermost
-   * @param {string} [context.activeConversationId] - Conversation ID the calling tool loop is building
+   * @param {string} [context.activeSessionId] - Session ID the calling tool loop is building
    * @param {import('../authorization/suspension-handler.js').SuspensionHandler} [context.suspensionHandler]
    * @returns {Promise<ToolResult[]>}
    */

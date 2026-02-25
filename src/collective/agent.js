@@ -68,11 +68,43 @@ export class Agent extends Participant {
   get status() { return this.#status; }
 
   /**
+   * Handle an incoming message by running the LLM tool-use loop.
+   *
+   * @param {import('./participant.js').HandleMessageParams & {
+   *   deps: {
+   *     agentRuntime: import('../runtime/agent-runtime.js').AgentRuntime,
+   *     runId: string,
+   *     communicationChain?: string[],
+   *     suspensionHandler?: import('../authorization/suspension-handler.js').SuspensionHandler,
+   *   }
+   * }} params
+   * @returns {Promise<string>}
+   */
+  async handleMessage({ session, senderId, deps }) {
+    return deps.agentRuntime.runToolLoop({
+      agent: this,
+      session,
+      senderId,
+      runId: deps.runId,
+      communicationChain: deps.communicationChain || [],
+      suspensionHandler: deps.suspensionHandler,
+    });
+  }
+
+  /**
    * @returns {AgentConfig}
    */
   toJSON() {
+    const base = super.toJSON();
     return {
-      ...super.toJSON(),
+      id: base.id,
+      name: base.name,
+      description: base.description,
+      type: /** @type {'agent'} */ ('agent'),
+      toolAuthorizations: base.toolAuthorizations,
+      approvalAuthority: Array.isArray(base.approvalAuthority)
+        ? base.approvalAuthority
+        : [base.approvalAuthority],
       systemPrompt: this.#systemPrompt,
       modelConfig: { ...this.#modelConfig },
       tools: [...this.#tools],

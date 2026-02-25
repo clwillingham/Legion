@@ -1,9 +1,12 @@
 /**
- * The Agent Runtime drives an agent's execution loop:
- * 1. Assemble system prompt + conversation history + available tools
+ * The Agent Runtime drives an agent's LLM tool-use loop:
+ * 1. Get messages from session (roles already correct thanks to directionality)
  * 2. Call the LLM provider
  * 3. If response contains tool_use: execute tools, append results, loop
  * 4. If response is end_turn: return final text response
+ *
+ * The runtime does NOT manage sessions or conversations — that's handled
+ * by the CommunicatorTool. The runtime only executes the tool loop.
  */
 export class AgentRuntime {
   #providerRegistry;
@@ -26,22 +29,23 @@ export class AgentRuntime {
   }
 
   /**
-   * Run an agent to produce a response in a conversation.
+   * Run the LLM tool-use loop for an agent within a session.
+   *
    * @param {Object} params
    * @param {import('../collective/agent.js').Agent} params.agent
-   * @param {import('../communication/conversation.js').Conversation} params.conversation
+   * @param {import('../session/session.js').Session} params.session
    * @param {string} params.senderId - Who initiated this communication
-   * @param {string} params.sessionId - Current session ID
+   * @param {string} params.runId - Current run ID
    * @param {string[]} [params.communicationChain] - Chain of sender IDs from outermost to innermost
    * @param {import('../authorization/suspension-handler.js').SuspensionHandler} [params.suspensionHandler]
    * @returns {Promise<string>} The agent's final text response
    */
-  async run({ agent, conversation, senderId, sessionId, communicationChain, suspensionHandler }) {
+  async runToolLoop({ agent, session, senderId, runId, communicationChain, suspensionHandler }) {
     const provider = this.#providerRegistry.get(agent.modelConfig.provider);
     const toolDefinitions = this.#toolRegistry.getDefinitions(agent.tools);
 
-    // Get messages from conversation for this agent's perspective
-    const messages = conversation.getMessagesForParticipant(agent.id);
+    // Get messages from session — roles are already correct thanks to directionality
+    const messages = session.getMessages();
 
     const { responseText } = await this.#toolLoop({
       agent,
@@ -49,8 +53,8 @@ export class AgentRuntime {
       messages,
       toolDefinitions,
       senderId,
-      sessionId,
-      conversation,
+      runId,
+      session,
       communicationChain,
       suspensionHandler,
     });
@@ -66,14 +70,14 @@ export class AgentRuntime {
    * @param {import('../providers/provider.js').Message[]} params.messages
    * @param {import('../providers/provider.js').ToolDefinition[]} params.toolDefinitions
    * @param {string} params.senderId
-   * @param {string} params.sessionId
-   * @param {import('../communication/conversation.js').Conversation} params.conversation
+   * @param {string} params.runId
+   * @param {import('../session/session.js').Session} params.session
    * @param {string[]} [params.communicationChain]
    * @param {import('../authorization/suspension-handler.js').SuspensionHandler} [params.suspensionHandler]
    * @param {number} [maxIterations=20]
    * @returns {Promise<{responseText: string, finalContent: import('../providers/provider.js').MessageContent[]}>}
    */
-  async #toolLoop({ agent, provider, messages, toolDefinitions, senderId, sessionId, conversation, communicationChain, suspensionHandler }, maxIterations = 20) {
+  async #toolLoop({ agent, provider, messages, toolDefinitions, senderId, runId, session, communicationChain, suspensionHandler }, maxIterations = 20) {
     let currentMessages = [...messages];
     let iterations = 0;
 
@@ -101,8 +105,8 @@ export class AgentRuntime {
         return { responseText, finalContent: response.content };
       }
 
-      // Append assistant message with tool_use to conversation
-      conversation.addMessage(agent.id, 'assistant', response.content);
+      // Append assistant message with tool_use to session
+      session.addMessage(agent.id, response.content);
       currentMessages.push({ role: 'assistant', content: response.content });
 
       // Log and execute tool calls
@@ -124,11 +128,11 @@ export class AgentRuntime {
           toolCalls,
           agent,
           {
-            sessionId,
+            sessionId: runId,
             senderId,
             callerId: agent.id,
             communicationChain: communicationChain || [],
-            activeConversationId: conversation.id,
+            activeSessionId: session.id,
             suspensionHandler,
           }
         );
@@ -159,8 +163,8 @@ export class AgentRuntime {
         ...(r.isError ? { isError: true } : {}),
       }));
 
-      // Append tool results as a user message
-      conversation.addMessage(senderId, 'user', resultContent);
+      // Append tool results to session (role inferred as 'user' for tool results)
+      session.addMessage(senderId, resultContent);
       currentMessages.push({ role: 'user', content: resultContent });
     }
 

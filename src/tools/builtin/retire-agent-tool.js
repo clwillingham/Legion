@@ -1,36 +1,49 @@
 import { Agent } from '../../collective/agent.js';
-
-/** @type {import('../../providers/provider.js').ToolDefinition} */
-export const RETIRE_AGENT_DEFINITION = {
-  name: 'retire_agent',
-  description: `Retire an agent from the collective. The agent will be marked as retired and will no longer be available for communication or tool execution. This does not delete the agent's data — it's a soft retirement that preserves history. You cannot retire user participants or already-retired agents.`,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      agentId: {
-        type: 'string',
-        description: 'The ID of the agent to retire',
-      },
-      reason: {
-        type: 'string',
-        description: 'Optional reason for retiring this agent',
-      },
-    },
-    required: ['agentId'],
-  },
-};
+import { Tool } from '../tool.js';
 
 /**
- * Create the retire_agent tool handler.
- * @param {import('../../collective/collective.js').Collective} collective
- * @param {Object} [options]
- * @param {import('../../repl/activity-logger.js').ActivityLogger} [options.activityLogger]
- * @returns {function(Object, Object): Promise<string>}
+ * Tool for soft-retiring an agent from the collective.
  */
-export function createRetireAgentHandler(collective, options = {}) {
-  const activityLogger = options.activityLogger || null;
-  return async (input, context) => {
-    const existing = collective.getParticipant(input.agentId);
+export class RetireAgentTool extends Tool {
+  #collective;
+  #activityLogger;
+
+  /**
+   * @param {Object} deps
+   * @param {import('../../collective/collective.js').Collective} deps.collective
+   * @param {import('../../repl/activity-logger.js').ActivityLogger} [deps.activityLogger]
+   */
+  constructor({ collective, activityLogger }) {
+    super();
+    this.#collective = collective;
+    this.#activityLogger = activityLogger || null;
+  }
+
+  get name() { return 'retire_agent'; }
+
+  get definition() {
+    return {
+      name: 'retire_agent',
+      description: `Retire an agent from the collective. The agent will be marked as retired and will no longer be available for communication or tool execution. This does not delete the agent's data — it's a soft retirement that preserves history. You cannot retire user participants or already-retired agents.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          agentId: {
+            type: 'string',
+            description: 'The ID of the agent to retire',
+          },
+          reason: {
+            type: 'string',
+            description: 'Optional reason for retiring this agent',
+          },
+        },
+        required: ['agentId'],
+      },
+    };
+  }
+
+  async execute(input, context) {
+    const existing = this.#collective.getParticipant(input.agentId);
     if (!existing) {
       return JSON.stringify({ error: `Agent "${input.agentId}" not found` });
     }
@@ -39,7 +52,9 @@ export function createRetireAgentHandler(collective, options = {}) {
       return JSON.stringify({ error: `Participant "${input.agentId}" is a ${existing.type}, not an agent. Only agents can be retired.` });
     }
 
-    if (existing.status === 'retired') {
+    const agent = /** @type {import('../../collective/agent.js').Agent} */ (existing);
+
+    if (agent.status === 'retired') {
       return JSON.stringify({ error: `Agent "${input.agentId}" is already retired` });
     }
 
@@ -52,16 +67,16 @@ export function createRetireAgentHandler(collective, options = {}) {
     }
 
     // Create a retired copy of the agent
-    const existingJSON = existing.toJSON();
+    /** @type {import('../../collective/agent.js').AgentConfig} */
     const retiredConfig = {
-      ...existingJSON,
-      status: 'retired',
+      ...agent.toJSON(),
+      status: /** @type {'retired'} */ ('retired'),
     };
 
     const retiredAgent = new Agent(retiredConfig);
-    await collective.updateParticipant(retiredAgent);
+    await this.#collective.updateParticipant(retiredAgent);
 
-    activityLogger?.agentRetired?.(input.agentId, context.callerId, input.reason);
+    this.#activityLogger?.agentRetired?.(input.agentId, context.callerId, input.reason);
 
     return JSON.stringify({
       success: true,
@@ -70,5 +85,5 @@ export function createRetireAgentHandler(collective, options = {}) {
       status: 'retired',
       reason: input.reason || 'No reason provided',
     });
-  };
+  }
 }

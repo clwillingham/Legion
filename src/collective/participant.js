@@ -19,7 +19,21 @@
  */
 
 /**
+ * @typedef {Object} HandleMessageParams
+ * @property {import('../session/session.js').Session} session - The session to respond in
+ * @property {string} senderId - Who is sending the message
+ * @property {string} senderName - Display name of the sender
+ * @property {string} message - The message text (for display purposes)
+ * @property {Object} deps - Runtime dependencies (injected per-call)
+ */
+
+/**
  * Base class for all participants (agents and users).
+ *
+ * Subclasses implement handleMessage() to define how they respond
+ * to incoming messages:
+ * - Agent: runs the LLM tool-use loop via AgentRuntime
+ * - User: prompts the REPL for human input
  */
 export class Participant {
   #config;
@@ -48,6 +62,17 @@ export class Participant {
 
   /** @returns {string[] | string} */
   get approvalAuthority() { return this.#config.approvalAuthority || []; }
+
+  /**
+   * Handle an incoming message and produce a response.
+   *
+   * @param {HandleMessageParams} params
+   * @returns {Promise<string>} The participant's response text
+   * @abstract
+   */
+  async handleMessage(params) {
+    throw new Error(`${this.constructor.name} must implement handleMessage()`);
+  }
 
   /**
    * Serialize to a plain object for JSON storage.

@@ -2,6 +2,19 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Provider } from './provider.js';
 
 /**
+ * @typedef {Object} AnthropicToolDef
+ * @property {string} name
+ * @property {string} description
+ * @property {Object} input_schema
+ */
+
+/**
+ * @typedef {Object} AnthropicMessage
+ * @property {'user' | 'assistant'} role
+ * @property {Array<Record<string, unknown>>} content
+ */
+
+/**
  * Anthropic Claude provider adapter.
  * Translation is near-identity since the internal format mirrors Anthropic's API.
  * Mostly camelCase→snake_case conversions.
@@ -24,12 +37,19 @@ export class AnthropicProvider extends Provider {
   /** @override */
   get name() { return 'anthropic'; }
 
-  /** @override */
+  /**
+   * @override
+   * @param {import('./provider.js').CompletionRequest} request
+   * @returns {Promise<import('./provider.js').CompletionResponse>}
+   */
   async createCompletion(request) {
+    /** @type {Anthropic.MessageCreateParams} */
     const params = {
       model: request.model,
       max_tokens: request.maxTokens || 4096,
-      messages: this.#convertMessagesToAPI(request.messages),
+      messages: /** @type {Anthropic.MessageParam[]} */ (/** @type {unknown} */ (
+        this.#convertMessagesToAPI(request.messages)
+      )),
     };
 
     if (request.systemPrompt) {
@@ -37,7 +57,9 @@ export class AnthropicProvider extends Provider {
     }
 
     if (request.tools && request.tools.length > 0) {
-      params.tools = this.#convertToolsToAPI(request.tools);
+      params.tools = /** @type {Anthropic.Tool[]} */ (
+        this.#convertToolsToAPI(request.tools)
+      );
     }
 
     if (request.temperature !== undefined) {
@@ -51,7 +73,7 @@ export class AnthropicProvider extends Provider {
   /**
    * Convert internal tool definitions to Anthropic format.
    * @param {import('./provider.js').ToolDefinition[]} tools
-   * @returns {Object[]}
+   * @returns {AnthropicToolDef[]}
    */
   #convertToolsToAPI(tools) {
     return tools.map(tool => ({
@@ -64,24 +86,25 @@ export class AnthropicProvider extends Provider {
   /**
    * Convert internal messages to Anthropic format.
    * @param {import('./provider.js').Message[]} messages
-   * @returns {Object[]}
+   * @returns {AnthropicMessage[]}
    */
   #convertMessagesToAPI(messages) {
+    /** @type {AnthropicMessage[]} */
     const converted = messages.map(msg => ({
       role: msg.role,
       content: msg.content.map(block => {
         if (block.type === 'tool_result') {
           return {
-            type: 'tool_result',
-            tool_use_id: block.toolUseId,
+            type: /** @type {const} */ ('tool_result'),
+            tool_use_id: /** @type {import('./provider.js').ToolResultContent} */ (block).toolUseId,
             content: typeof block.content === 'string'
               ? block.content
               : JSON.stringify(block.content),
-            ...(block.isError ? { is_error: true } : {}),
+            ...(/** @type {import('./provider.js').ToolResultContent} */ (block).isError ? { is_error: true } : {}),
           };
         }
         // text and tool_use blocks are structurally identical
-        return block;
+        return /** @type {Record<string, unknown>} */ (block);
       }),
     }));
 
@@ -97,10 +120,11 @@ export class AnthropicProvider extends Provider {
    * This is a safety net for edge cases where conversation mutations
    * (e.g., self-conversation via communicator) might disrupt ordering.
    *
-   * @param {Object[]} messages
-   * @returns {Object[]}
+   * @param {AnthropicMessage[]} messages
+   * @returns {AnthropicMessage[]}
    */
   #validateAndFixMessageOrder(messages) {
+    /** @type {AnthropicMessage[]} */
     const fixed = [];
 
     for (let i = 0; i < messages.length; i++) {
@@ -115,7 +139,7 @@ export class AnthropicProvider extends Provider {
       const toolUseIds = new Set(
         (msg.content || [])
           .filter(b => b.type === 'tool_use')
-          .map(b => b.id)
+          .map(b => /** @type {string} */ (b.id))
       );
 
       if (toolUseIds.size === 0) {
@@ -129,17 +153,19 @@ export class AnthropicProvider extends Provider {
       // Look ahead for matching tool_result blocks
       // They should be in the immediately next message, but may be
       // separated by spurious messages due to conversation mutations
+      /** @type {Array<Record<string, unknown>>} */
       const toolResultBlocks = [];
+      /** @type {AnthropicMessage[]} */
       const deferredMessages = [];
       let j = i + 1;
 
       while (j < messages.length) {
         const nextMsg = messages[j];
         const matchingResults = (nextMsg.content || []).filter(
-          b => b.type === 'tool_result' && toolUseIds.has(b.tool_use_id)
+          b => b.type === 'tool_result' && toolUseIds.has(/** @type {string} */ (b.tool_use_id))
         );
         const otherContent = (nextMsg.content || []).filter(
-          b => !(b.type === 'tool_result' && toolUseIds.has(b.tool_use_id))
+          b => !(b.type === 'tool_result' && toolUseIds.has(/** @type {string} */ (b.tool_use_id)))
         );
 
         if (matchingResults.length > 0) {
@@ -177,16 +203,13 @@ export class AnthropicProvider extends Provider {
 
   /**
    * Convert Anthropic response to internal format.
-   * @param {Object} response
+   * @param {Anthropic.Message} response
    * @returns {import('./provider.js').CompletionResponse}
    */
   #convertResponseFromAPI(response) {
     return {
-      stopReason: response.stop_reason,
-      content: response.content.map(block => {
-        // text and tool_use blocks are structurally identical to internal format
-        return block;
-      }),
+      stopReason: /** @type {import('./provider.js').CompletionResponse['stopReason']} */ (response.stop_reason),
+      content: response.content.map(block => /** @type {import('./provider.js').MessageContent} */ (block)),
       usage: {
         inputTokens: response.usage.input_tokens,
         outputTokens: response.usage.output_tokens,

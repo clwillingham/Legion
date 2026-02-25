@@ -12,7 +12,18 @@ export class ToolRegistry {
   #tools = new Map();
 
   /**
-   * Register a tool.
+   * Register a Tool instance (class-based pattern).
+   * @param {import('./tool.js').Tool} tool
+   */
+  registerTool(tool) {
+    this.#tools.set(tool.name, {
+      definition: tool.definition,
+      handler: (input, context) => tool.execute(input, context),
+    });
+  }
+
+  /**
+   * Register a tool with explicit name, definition, and handler.
    * @param {string} name
    * @param {import('../providers/provider.js').ToolDefinition} definition
    * @param {function(Object, Object): Promise<string>} handler

@@ -1,68 +1,71 @@
+import { Tool } from '../tool.js';
+
 /**
- * Tool definition for resolve_approval — allows agents with approval
- * authority to approve or reject pending tool call requests.
+ * Tool for agents with approval authority to approve or reject
+ * pending tool call requests.
  *
  * When approved, this tool blocks until the inner agent's session finishes
  * and returns the agent's response. When rejected, it returns immediately
  * with a confirmation.
  */
-export const RESOLVE_APPROVAL_DEFINITION = {
-  name: 'resolve_approval',
-  description: 'Approve or reject a pending tool call that requires your authorization. When you receive an approval request as a communicator tool_result, review the details and use this tool to submit your decision. If you approve, the agent\'s session will resume and this tool will return the agent\'s final response once complete. If you reject, the agent will be informed and can adapt.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      requestId: {
-        type: 'string',
-        description: 'The approval request ID provided in the approval request details.',
-      },
-      decision: {
-        type: 'string',
-        enum: ['approved', 'rejected'],
-        description: 'Your decision: "approved" to allow the tool call to execute, or "rejected" to deny it.',
-      },
-      reason: {
-        type: 'string',
-        description: 'Optional reason for your decision (especially useful for rejections so the agent can adapt).',
-      },
-    },
-    required: ['requestId', 'decision'],
-  },
-};
+export class ResolveApprovalTool extends Tool {
+  #pendingApprovalStore;
+  #activityLogger;
 
-/**
- * Create the resolve_approval tool handler.
- *
- * When the agent approves, this handler:
- * 1. Resolves the suspension promise (unblocking the inner agent's tool loop)
- * 2. Waits for the inner agent's run to complete (via the stored runPromise)
- * 3. Returns the inner agent's final response as this tool's result
- *
- * This way the approving agent sees the full result of the session it approved.
- *
- * @param {import('../../authorization/pending-approval-store.js').PendingApprovalStore} pendingApprovalStore
- * @param {Object} [opts]
- * @param {import('../../repl/activity-logger.js').ActivityLogger} [opts.activityLogger]
- * @returns {function(Object, Object): Promise<string>}
- */
-export function createResolveApprovalHandler(pendingApprovalStore, opts = {}) {
-  const { activityLogger } = opts;
+  /**
+   * @param {Object} deps
+   * @param {import('../../authorization/pending-approval-store.js').PendingApprovalStore} deps.pendingApprovalStore
+   * @param {import('../../repl/activity-logger.js').ActivityLogger} [deps.activityLogger]
+   */
+  constructor({ pendingApprovalStore, activityLogger }) {
+    super();
+    this.#pendingApprovalStore = pendingApprovalStore;
+    this.#activityLogger = activityLogger || null;
+  }
 
-  return async (input, context) => {
+  get name() { return 'resolve_approval'; }
+
+  get definition() {
+    return {
+      name: 'resolve_approval',
+      description: 'Approve or reject a pending tool call that requires your authorization. When you receive an approval request as a communicator tool_result, review the details and use this tool to submit your decision. If you approve, the agent\'s session will resume and this tool will return the agent\'s final response once complete. If you reject, the agent will be informed and can adapt.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requestId: {
+            type: 'string',
+            description: 'The approval request ID provided in the approval request details.',
+          },
+          decision: {
+            type: 'string',
+            enum: ['approved', 'rejected'],
+            description: 'Your decision: "approved" to allow the tool call to execute, or "rejected" to deny it.',
+          },
+          reason: {
+            type: 'string',
+            description: 'Optional reason for your decision (especially useful for rejections so the agent can adapt).',
+          },
+        },
+        required: ['requestId', 'decision'],
+      },
+    };
+  }
+
+  async execute(input, context) {
     const { requestId, decision, reason } = input;
 
-    if (!pendingApprovalStore.has(requestId)) {
+    if (!this.#pendingApprovalStore.has(requestId)) {
       return `Error: No pending approval request found with ID "${requestId}". It may have already been resolved or expired.`;
     }
 
-    const entry = pendingApprovalStore.get(requestId);
+    const entry = this.#pendingApprovalStore.get(requestId);
     const { pendingApprovals, resolve, runPromise } = entry;
 
     // Build decisions map — apply the same decision to all tool calls in the batch
     const decisions = new Map();
     for (const pa of pendingApprovals) {
       decisions.set(pa.toolCallId, decision);
-      activityLogger?.approvalDecision(
+      this.#activityLogger?.approvalDecision(
         context.callerId,
         pa.toolName,
         decision
@@ -73,7 +76,7 @@ export function createResolveApprovalHandler(pendingApprovalStore, opts = {}) {
     resolve(decisions);
 
     // Clean up the store entry
-    pendingApprovalStore.delete(requestId);
+    this.#pendingApprovalStore.delete(requestId);
 
     const toolNames = pendingApprovals.map(pa => pa.toolName).join(', ');
 
@@ -96,5 +99,5 @@ export function createResolveApprovalHandler(pendingApprovalStore, opts = {}) {
         return `Rejected: tool call(s) [${toolNames}] rejected.${reasonText}`;
       }
     }
-  };
+  }
 }

@@ -1,21 +1,36 @@
-/** @type {import('../../providers/provider.js').ToolDefinition} */
-export const LIST_PARTICIPANTS_DEFINITION = {
-  name: 'list_participants',
-  description: `List all participants in the collective. Returns each participant's ID, name, type, description, and (for agents) their available tools and status.`,
-  inputSchema: {
-    type: 'object',
-    properties: {},
-  },
-};
+import { Tool } from '../tool.js';
 
 /**
- * Create the list_participants tool handler.
- * @param {import('../../collective/collective.js').Collective} collective
- * @returns {function(Object, Object): Promise<string>}
+ * Tool for listing all participants in the collective.
  */
-export function createListParticipantsHandler(collective) {
-  return async (_input, _context) => {
-    const participants = collective.getAllParticipants().map(p => {
+export class ListParticipantsTool extends Tool {
+  #collective;
+
+  /**
+   * @param {Object} deps
+   * @param {import('../../collective/collective.js').Collective} deps.collective
+   */
+  constructor({ collective }) {
+    super();
+    this.#collective = collective;
+  }
+
+  get name() { return 'list_participants'; }
+
+  get definition() {
+    return {
+      name: 'list_participants',
+      description: `List all participants in the collective. Returns each participant's ID, name, type, description, and (for agents) their available tools and status.`,
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    };
+  }
+
+  async execute(_input, _context) {
+    const participants = this.#collective.getAllParticipants().map(p => {
+      /** @type {Record<string, any>} */
       const info = {
         id: p.id,
         name: p.name,
@@ -23,13 +38,14 @@ export function createListParticipantsHandler(collective) {
         description: p.description,
       };
       if (p.type === 'agent') {
-        info.tools = p.tools;
-        info.status = p.status;
-        info.model = `${p.modelConfig.provider}/${p.modelConfig.model}`;
+        const agent = /** @type {import('../../collective/agent.js').Agent} */ (p);
+        info.tools = agent.tools;
+        info.status = agent.status;
+        info.model = `${agent.modelConfig.provider}/${agent.modelConfig.model}`;
       }
       return info;
     });
 
     return JSON.stringify(participants, null, 2);
-  };
+  }
 }
