@@ -1,0 +1,23 @@
+{
+  "name": "legion",
+  "version": "0.1.0",
+  "description": "A persistent multi-agent collective with peer-to-peer communication",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "legion": "./bin/legion.js"
+  },
+  "scripts": {
+    "start": "node bin/legion.js start",
+    "init": "node bin/legion.js init",
+    "test": "node --test src/**/*.test.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.77.0",
+    "uuid": "^11.0.0"
+  }
+}
