@@ -1,6 +1,6 @@
 # Legion
 
-**A Persistent Multi-Agent Collective with Peer-to-Peer Communication**
+**A Persistent Multi-Agent Collective runtime with Peer-to-Peer Communication**
 
 *Many as One*
 
@@ -101,7 +101,7 @@ for this task and break down the requirements...
 ## 🏗️ Architecture Overview
 
 ```
-┌──────────────────────────────────────────────┐
+┌───────────────────────────────────────────────┐
 │                 Your Project                  │
 │                                               │
 │   ┌───────────────────────────────────────┐   │
@@ -110,10 +110,10 @@ for this task and break down the requirements...
 │   │   ┌───────────────────────────────┐   │   │
 │   │   │          Collective           │   │   │
 │   │   │                               │   │   │
-│   │   │   ┌─────────┐   ┌─────────┐   │   │   │
-│   │   │   │ Agent A │   │ Agent B │   │   │   │
-│   │   │   └────┬────┘   └────┬────┘   │   │   │
-│   │   │        │  Communicator │       │   │   │
+│   │   │   ┌─────────┐    ┌─────────┐  │   │   │
+│   │   │   │ Agent A │    │ Agent B │  │   │   │
+│   │   │   └────┬────┘    └────┬────┘  │   │   │
+│   │   │        │ Communicator │       │   │   │
 │   │   │        └──────┬───────┘       │   │   │
 │   │   │           ┌───┴───┐           │   │   │
 │   │   │           │  User │           │   │   │
@@ -122,7 +122,7 @@ for this task and break down the requirements...
 │   └───────────────────────────────────────┘   │
 │                                               │
 │   src/  docs/  package.json  etc.             │
-└──────────────────────────────────────────────┘
+└───────────────────────────────────────────────┘
 ```
 
 **Core Insight:** Communication between agents is a tool, not a topology. Each agent decides when and who to talk to, creating organic coordination patterns rather than rigid hierarchies.
@@ -142,7 +142,7 @@ Legion development follows a clear 6-phase plan:
 
 **We'd love your help!** Legion is designed to be extended, experimented with, and improved by a community of builders.
 
-This project has a unique property: **Legion itself is built using Legion.** Our development collective includes specialized agents for coding, documentation, review, and project management. Contributing means joining a multi-agent team!
+This project has a unique property: **Legion itself is built using Legion.** (early stage with Claude) Our development collective includes specialized agents for coding, documentation, review, and project management. Contributing means joining a multi-agent team!
 
 ### Ways to Contribute
 - **Try Legion** on your projects and share feedback
