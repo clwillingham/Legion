@@ -108,6 +108,21 @@ export class Workspace {
   }
 
   /**
+   * List subdirectories in a directory relative to .legion/.
+   * @param {string} relativePath - Directory path relative to .legion/
+   * @returns {Promise<string[]>} Array of directory names
+   */
+  async listDirs(relativePath) {
+    try {
+      const entries = await readdir(join(this.legionDir, relativePath), { withFileTypes: true });
+      return entries.filter(e => e.isDirectory()).map(e => e.name);
+    } catch (err) {
+      if (err.code === 'ENOENT') return [];
+      throw err;
+    }
+  }
+
+  /**
    * Delete a JSON file relative to .legion/.
    * @param {string} relativePath - Path relative to .legion/
    * @returns {Promise<boolean>} True if deleted, false if not found

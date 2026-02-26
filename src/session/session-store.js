@@ -5,6 +5,7 @@ import { Session } from './session.js';
  * @typedef {Object} RunConfig
  * @property {string} id
  * @property {string} collectiveId
+ * @property {string|null} name - Optional human-readable name
  * @property {string} createdAt
  * @property {string|null} endedAt
  * @property {string[]} sessionIds
@@ -13,11 +14,10 @@ import { Session } from './session.js';
 /**
  * Manages runs and their sessions.
  *
- * A "run" corresponds to one `legion start` invocation.
+ * A "run" is a persistent session that spans multiple `legion start` invocations.
+ * On startup, the latest run is automatically resumed with full conversation history.
+ * New runs are created explicitly via `/session new`.
  * Each run contains multiple sessions (one per participant pair per session name).
- *
- * Replaces the old SessionManager + Conversation system with a simpler,
- * directional session model.
  */
 export class SessionStore {
   #workspace;
@@ -34,14 +34,16 @@ export class SessionStore {
   /**
    * Create a new run.
    * @param {string} collectiveId
+   * @param {string|null} [name=null] - Optional human-readable name
    * @returns {Promise<string>} Run ID
    */
-  async createRun(collectiveId) {
+  async createRun(collectiveId, name = null) {
     const id = uuidv4();
     /** @type {RunConfig} */
     const config = {
       id,
       collectiveId,
+      name: name || null,
       createdAt: new Date().toISOString(),
       endedAt: null,
       sessionIds: [],
@@ -112,6 +114,96 @@ export class SessionStore {
       `runs/${runId}/sessions/${session.id}.json`,
       session.toJSON()
     );
+  }
+
+  /**
+   * Get the most recent run, regardless of whether it was ended.
+   * @returns {Promise<RunConfig|null>}
+   */
+  async getLatestRun() {
+    const runDirs = await this.#workspace.listDirs('runs');
+    if (runDirs.length === 0) return null;
+
+    /** @type {RunConfig[]} */
+    const runs = [];
+    for (const dir of runDirs) {
+      const config = await this.#workspace.readJSON(`runs/${dir}/run.json`);
+      if (config) runs.push(config);
+    }
+
+    if (runs.length === 0) return null;
+
+    runs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return runs[0];
+  }
+
+  /**
+   * Load all sessions for a run into the in-memory cache.
+   * @param {string} runId
+   * @returns {Promise<void>}
+   */
+  async loadRunSessions(runId) {
+    this.#sessions.clear();
+    const sessionFiles = await this.#workspace.listJSON(`runs/${runId}/sessions`);
+    for (const file of sessionFiles) {
+      const data = await this.#workspace.readJSON(`runs/${runId}/sessions/${file}`);
+      if (data) {
+        const session = Session.fromJSON(data);
+        this.#sessions.set(session.id, session);
+      }
+    }
+  }
+
+  /**
+   * Resume an existing run — reopen it and load its sessions.
+   * @param {string} runId
+   * @returns {Promise<string>} The run ID
+   */
+  async resumeRun(runId) {
+    const config = await this.#workspace.readJSON(`runs/${runId}/run.json`);
+    if (!config) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+
+    // Mark as active again
+    if (config.endedAt) {
+      config.endedAt = null;
+      await this.#workspace.writeJSON(`runs/${runId}/run.json`, config);
+    }
+
+    await this.loadRunSessions(runId);
+    return runId;
+  }
+
+  /**
+   * List all runs with basic metadata.
+   * @returns {Promise<RunConfig[]>}
+   */
+  async listRuns() {
+    const runDirs = await this.#workspace.listDirs('runs');
+    /** @type {RunConfig[]} */
+    const runs = [];
+    for (const dir of runDirs) {
+      const config = await this.#workspace.readJSON(`runs/${dir}/run.json`);
+      if (config) runs.push(config);
+    }
+    runs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return runs;
+  }
+
+  /**
+   * Find a run by exact or partial (prefix) ID.
+   * @param {string} idOrPrefix
+   * @returns {Promise<RunConfig|null>}
+   */
+  async findRun(idOrPrefix) {
+    const runDirs = await this.#workspace.listDirs('runs');
+    const matches = runDirs.filter(dir => dir.startsWith(idOrPrefix));
+    if (matches.length === 0) return null;
+    if (matches.length > 1) {
+      throw new Error(`Ambiguous run ID prefix "${idOrPrefix}" matches ${matches.length} runs. Be more specific.`);
+    }
+    return this.#workspace.readJSON(`runs/${matches[0]}/run.json`);
   }
 
   /**

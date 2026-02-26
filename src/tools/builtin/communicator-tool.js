@@ -61,6 +61,14 @@ export class CommunicatorTool extends Tool {
 
   get name() { return 'communicator'; }
 
+  /**
+   * Update the active run ID (used when switching sessions).
+   * @param {string} runId
+   */
+  setRunId(runId) {
+    this.#runId = runId;
+  }
+
   get definition() {
     return {
       name: 'communicator',

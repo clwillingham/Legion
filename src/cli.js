@@ -136,7 +136,18 @@ async function handleStart(options) {
   const toolExecutor = new ToolExecutor({ toolRegistry, authEngine });
   const agentRuntime = new AgentRuntime({ providerRegistry, toolExecutor, toolRegistry, activityLogger });
   const sessionStore = new SessionStore(workspace);
-  const runId = await sessionStore.createRun(collective.getConfig().id);
+
+  // Resume latest run or create a new one
+  const latestRun = await sessionStore.getLatestRun();
+  let runId;
+  let resumed = false;
+  if (latestRun) {
+    runId = await sessionStore.resumeRun(latestRun.id);
+    resumed = true;
+  } else {
+    runId = await sessionStore.createRun(collective.getConfig().id);
+  }
+
   const repl = new Repl();
   const pendingApprovalStore = new PendingApprovalStore();
 
@@ -170,11 +181,19 @@ async function handleStart(options) {
   const approvalFlow = new ApprovalFlow({ collective, repl, activityLogger });
   toolExecutor.setApprovalFlow(approvalFlow);
 
+  // Mutable context shared between input loop and command handler
+  const ctx = { currentRunId: runId };
+
   // Start REPL
   repl.start();
 
   console.log(formatSuccess(`\nLegion — Many as One`));
-  console.log(formatInfo(`Run: ${runId}`));
+  if (resumed) {
+    const runLabel = latestRun.name ? `${latestRun.name} (${runId.slice(0, 8)})` : runId.slice(0, 8);
+    console.log(formatInfo(`Resumed session: ${runLabel}`));
+  } else {
+    console.log(formatInfo(`New session: ${runId.slice(0, 8)}`));
+  }
   console.log(formatInfo(`Providers: ${availableProviders.join(', ')}`));
   console.log(formatInfo(`Participants: ${collective.getAllParticipants().map(p => p.name).join(', ')}`));
   console.log(formatInfo(`\nType a message to talk to the UR Agent, or /help for commands.\n`));
@@ -190,7 +209,7 @@ async function handleStart(options) {
   await repl.inputLoop(async (input) => {
     // Handle commands
     if (input.startsWith('/')) {
-      await handleCommand(input, { collective, repl });
+      await handleCommand(input, { collective, repl, sessionStore, communicatorTool, ctx });
       return;
     }
 
@@ -206,7 +225,7 @@ async function handleStart(options) {
   });
 
   // Clean up
-  await sessionStore.endRun(runId);
+  await sessionStore.endRun(ctx.currentRunId);
   repl.stop();
   console.log(formatInfo('\nSession ended. Goodbye!'));
 }
@@ -216,17 +235,21 @@ async function handleStart(options) {
  * @param {string} input
  * @param {Object} deps
  */
-async function handleCommand(input, { collective, repl }) {
-  const parts = input.split(/\s+/);
+async function handleCommand(input, { collective, repl, sessionStore, communicatorTool, ctx }) {
+  const parts = input.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
   const cmd = parts[0];
 
   switch (cmd) {
     case '/help':
       console.log(formatInfo([
         'Commands:',
-        '  /help          — Show this help message',
-        '  /participants  — List all participants in the collective',
-        '  /quit          — End the session and exit',
+        '  /help                  — Show this help message',
+        '  /participants          — List all participants in the collective',
+        '  /session new [name]    — Start a new session (optional name)',
+        '  /session list          — List all sessions',
+        '  /session load <id>     — Switch to an existing session (supports partial ID)',
+        '  /session info          — Show current session details',
+        '  /quit                  — End the session and exit',
       ].join('\n')));
       break;
 
@@ -243,8 +266,132 @@ async function handleCommand(input, { collective, repl }) {
       }
       break;
 
+    case '/session':
+      await handleSessionCommand(parts.slice(1), { collective, sessionStore, communicatorTool, ctx });
+      break;
+
     default:
       console.log(formatInfo(`Unknown command: ${cmd}. Type /help for available commands.`));
+  }
+}
+
+/**
+ * Handle /session subcommands.
+ * @param {string[]} args
+ * @param {Object} deps
+ */
+async function handleSessionCommand(args, { collective, sessionStore, communicatorTool, ctx }) {
+  const subcommand = args[0];
+
+  switch (subcommand) {
+    case 'new': {
+      // Parse optional name — strip surrounding quotes if present
+      const rawName = args.slice(1).join(' ');
+      const name = rawName.replace(/^"|"$/g, '') || null;
+
+      await sessionStore.endRun(ctx.currentRunId);
+      const collectiveId = collective.getConfig().id;
+      const newRunId = await sessionStore.createRun(collectiveId, name);
+      ctx.currentRunId = newRunId;
+      communicatorTool.setRunId(newRunId);
+
+      const label = name ? `${name} (${newRunId.slice(0, 8)})` : newRunId.slice(0, 8);
+      console.log(formatSuccess(`Started new session: ${label}`));
+      break;
+    }
+
+    case 'list': {
+      const runs = await sessionStore.listRuns();
+      if (runs.length === 0) {
+        console.log(formatInfo('No sessions found.'));
+        break;
+      }
+      console.log(formatInfo('Sessions:'));
+      for (const run of runs) {
+        const isCurrent = run.id === ctx.currentRunId;
+        const marker = isCurrent ? ' (active)' : '';
+        const status = run.endedAt ? 'ended' : 'open';
+        const name = run.name ? ` "${run.name}"` : '';
+        const date = new Date(run.createdAt).toLocaleString();
+        const sessions = run.sessionIds?.length || 0;
+        console.log(formatInfo(
+          `  ${run.id.slice(0, 8)}${name}  ${date}  [${sessions} conversations, ${status}]${marker}`
+        ));
+      }
+      break;
+    }
+
+    case 'load': {
+      const idPrefix = args[1];
+      if (!idPrefix) {
+        console.log(formatError('Usage: /session load <id>'));
+        break;
+      }
+
+      try {
+        const targetRun = await sessionStore.findRun(idPrefix);
+        if (!targetRun) {
+          console.log(formatError(`No session found matching "${idPrefix}".`));
+          break;
+        }
+        if (targetRun.id === ctx.currentRunId) {
+          console.log(formatInfo('That session is already active.'));
+          break;
+        }
+
+        await sessionStore.endRun(ctx.currentRunId);
+        await sessionStore.resumeRun(targetRun.id);
+        ctx.currentRunId = targetRun.id;
+        communicatorTool.setRunId(targetRun.id);
+
+        const label = targetRun.name
+          ? `${targetRun.name} (${targetRun.id.slice(0, 8)})`
+          : targetRun.id.slice(0, 8);
+        console.log(formatSuccess(`Switched to session: ${label}`));
+      } catch (err) {
+        console.log(formatError(err.message));
+      }
+      break;
+    }
+
+    case 'info': {
+      const run = await sessionStore.findRun(ctx.currentRunId);
+      if (!run) {
+        console.log(formatError('Current session not found.'));
+        break;
+      }
+      console.log(formatInfo('Current session:'));
+      console.log(formatInfo(`  ID:       ${run.id}`));
+      if (run.name) {
+        console.log(formatInfo(`  Name:     ${run.name}`));
+      }
+      console.log(formatInfo(`  Created:  ${new Date(run.createdAt).toLocaleString()}`));
+      console.log(formatInfo(`  Status:   ${run.endedAt ? 'ended' : 'active'}`));
+      if (run.sessionIds && run.sessionIds.length > 0) {
+        console.log(formatInfo(`  Conversations:`));
+        for (const sid of run.sessionIds) {
+          // Parse session ID: session-{initiator}__{responder}__{name}
+          const match = sid.match(/^session-(.+?)__(.+?)__(.+)$/);
+          if (match) {
+            console.log(formatInfo(`    ${match[1]} → ${match[2]} (${match[3]})`));
+          } else {
+            console.log(formatInfo(`    ${sid}`));
+          }
+        }
+      } else {
+        console.log(formatInfo(`  Conversations: none yet`));
+      }
+      break;
+    }
+
+    default:
+      console.log(formatInfo(
+        'Usage: /session <new|list|load|info>\n' +
+        '  /session new [name]    — Start a new session\n' +
+        '  /session list          — List all sessions\n' +
+        '  /session load <id>     — Switch to an existing session\n' +
+        '  /session info          — Show current session details'
+      ));
   }
 }
 
@@ -274,7 +421,7 @@ Usage:
     Initialize a new collective in the current directory.
 
   legion start
-    Start a session with the collective.
+    Start or resume a session with the collective.
 
   legion help
     Show this help message.
