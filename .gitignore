@@ -1,5 +1,5 @@
 node_modules/
 .env
-.legion/
+.legion/runs
 .vscode/
 .claude/

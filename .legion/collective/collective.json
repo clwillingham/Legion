@@ -1,0 +1,13 @@
+{
+  "id": "0a908950-9d64-460c-86c0-38e3db7a83e7",
+  "name": "My Collective",
+  "createdAt": "2026-02-25T08:04:18.282Z",
+  "participantIds": [
+    "user-user",
+    "ur-agent",
+    "resource-agent",
+    "dev-agent",
+    "review-agent",
+    "doc-agent"
+  ]
+}
