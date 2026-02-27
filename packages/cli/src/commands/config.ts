@@ -38,22 +38,38 @@ configCommand
     const workspace = new Workspace(root);
     await workspace.config.load();
 
-    const providerConfig = {
-      provider: name as 'anthropic' | 'openai' | 'openrouter',
-      ...(options.apiKey && { apiKey: options.apiKey }),
-      ...(options.apiKeyEnv && { apiKeyEnv: options.apiKeyEnv }),
-      ...(options.baseUrl && { baseUrl: options.baseUrl }),
-      ...(options.model && { defaultModel: options.model }),
-    };
+    // Secrets (apiKey, apiKeyEnv) ALWAYS go to global config.
+    // Non-secret settings go to the target (workspace by default, or global with --global).
+    const hasSecrets = options.apiKey || options.apiKeyEnv;
+    const hasSettings = options.baseUrl || options.model;
 
-    const merged = workspace.config.getMerged();
-    const providers = { ...merged.providers, [name]: providerConfig };
+    if (hasSecrets) {
+      const credentialConfig = {
+        provider: name as 'anthropic' | 'openai' | 'openrouter',
+        ...(options.apiKey && { apiKey: options.apiKey }),
+        ...(options.apiKeyEnv && { apiKeyEnv: options.apiKeyEnv }),
+      };
+      await workspace.config.saveProviderCredentials(name, credentialConfig);
+      console.log(chalk.green(`✓ Provider "${name}" credentials saved to global config (~/.config/legion/)`));
+    }
 
-    if (options.global) {
-      await workspace.config.saveGlobalConfig({ ...merged, providers });
-      console.log(chalk.green(`✓ Provider "${name}" saved to global config`));
-    } else {
-      await workspace.config.saveWorkspaceConfig({ ...merged, providers });
-      console.log(chalk.green(`✓ Provider "${name}" saved to workspace config`));
+    if (hasSettings || !hasSecrets) {
+      const settingsConfig = {
+        provider: name as 'anthropic' | 'openai' | 'openrouter',
+        ...(options.baseUrl && { baseUrl: options.baseUrl }),
+        ...(options.model && { defaultModel: options.model }),
+      };
+
+      const target = options.global ? 'global' : 'workspace';
+      if (target === 'global') {
+        const globalCfg = workspace.config.getGlobal();
+        const providers = { ...globalCfg.providers, [name]: { ...globalCfg.providers?.[name], ...settingsConfig } };
+        await workspace.config.saveGlobalConfig({ ...globalCfg, providers });
+      } else {
+        const wsCfg = workspace.config.getWorkspace();
+        const providers = { ...wsCfg.providers, [name]: { ...wsCfg.providers?.[name], ...settingsConfig } };
+        await workspace.config.saveWorkspaceConfig({ ...wsCfg, providers });
+      }
+      console.log(chalk.green(`✓ Provider "${name}" settings saved to ${target} config`));
     }
   });

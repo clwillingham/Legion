@@ -52,27 +52,37 @@ export class Config {
     };
   }
 
+  /** Get workspace config only (without global merge). */
+  getWorkspace(): WorkspaceConfig {
+    return { ...this.workspaceConfig };
+  }
+
+  /** Get global config only (without workspace merge). */
+  getGlobal(): GlobalConfig {
+    return { ...this.globalConfig };
+  }
+
   /**
    * Resolve an API key for a provider. Checks:
-   * 1. Provider config apiKey field
-   * 2. Environment variable from apiKeyEnv field
+   * 1. Direct apiKey from **global** config only (never workspace — secrets stay out of git)
+   * 2. Custom env var name (apiKeyEnv) from merged config
    * 3. Standard env var names (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
    */
   resolveApiKey(providerName: string): string | undefined {
-    const providers = this.get('providers');
-    const providerConfig = providers?.[providerName];
-
-    // Direct API key
-    if (providerConfig?.apiKey) {
-      return providerConfig.apiKey;
+    // 1. Direct API key from GLOBAL config only — never read secrets from workspace config
+    const globalProvider = this.globalConfig?.providers?.[providerName];
+    if (globalProvider?.apiKey) {
+      return globalProvider.apiKey;
     }
 
-    // Custom env var
-    if (providerConfig?.apiKeyEnv) {
-      return process.env[providerConfig.apiKeyEnv];
+    // 2. Custom env var from merged config (apiKeyEnv is not itself a secret)
+    const mergedProviders = this.get('providers');
+    const mergedProvider = mergedProviders?.[providerName];
+    if (mergedProvider?.apiKeyEnv) {
+      return process.env[mergedProvider.apiKeyEnv];
     }
 
-    // Standard env vars
+    // 3. Standard env vars
     const standardEnvVars: Record<string, string> = {
       anthropic: 'ANTHROPIC_API_KEY',
       openai: 'OPENAI_API_KEY',
@@ -85,6 +95,21 @@ export class Config {
     }
 
     return undefined;
+  }
+
+  /**
+   * Save provider credentials (apiKey, apiKeyEnv) to global config only.
+   * Ensures secrets never end up in workspace config that gets committed to git.
+   */
+  async saveProviderCredentials(
+    providerName: string,
+    credentials: { provider: 'anthropic' | 'openai' | 'openrouter'; apiKey?: string; apiKeyEnv?: string },
+  ): Promise<void> {
+    const global = this.getGlobal();
+    const existing = global.providers?.[providerName] ?? {};
+    const updated = { ...existing, ...credentials };
+    const providers = { ...global.providers, [providerName]: updated };
+    await this.saveGlobalConfig({ ...global, providers });
   }
 
   /**

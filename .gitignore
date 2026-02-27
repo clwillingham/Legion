@@ -7,7 +7,6 @@ dist/
 
 # Legion workspace data (sessions are local)
 .legion/sessions/
-.legion/config.json
 
 # Environment
 .env
