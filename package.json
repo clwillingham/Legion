@@ -1,23 +1,35 @@
 {
   "name": "legion",
-  "version": "0.1.0",
+  "private": true,
   "description": "A persistent multi-agent collective with peer-to-peer communication",
-  "type": "module",
-  "main": "src/index.js",
-  "bin": {
-    "legion": "./bin/legion.js"
-  },
+  "workspaces": [
+    "packages/core",
+    "packages/cli"
+  ],
   "scripts": {
-    "start": "node bin/legion.js start",
-    "init": "node bin/legion.js init",
-    "test": "node --test src/**/*.test.js"
+    "build": "npm run build --workspaces",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint packages/*/src/**/*.ts",
+    "lint:fix": "eslint packages/*/src/**/*.ts --fix",
+    "format": "prettier --write packages/*/src/**/*.ts",
+    "format:check": "prettier --check packages/*/src/**/*.ts",
+    "clean": "npm run clean --workspaces"
   },
+  "keywords": [
+    "ai",
+    "agents",
+    "multi-agent",
+    "llm",
+    "collective",
+    "orchestration"
+  ],
+  "author": "",
+  "license": "MIT",
   "engines": {
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
-    "openai": "^4.77.0",
-    "uuid": "^11.0.0"
+    "@anthropic-ai/sdk": "^0.78.0"
   }
 }

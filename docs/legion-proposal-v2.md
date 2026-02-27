@@ -273,19 +273,19 @@ These features would be opt-in and incremental, building on the core session mod
 │  └─────────────┘  └──────────┘  └────────────┘  │
 └─────────────────────┬───────────────────────────┘
                       │ WebSocket / REST
-┌─────────────────────┴───────────────────────────┐
+┌─────────────────────┴────────────────────────────┐
 │               Legion Server                      │
-│          (Node.js / JavaScript + JSDoc)           │
+│          (Node.js / Typescript)                  │
 │                                                  │
 │  ┌──────────────────────────────────────────┐    │
 │  │           Session Manager                │    │
 │  │  ┌────────────────────────────────────┐  │    │
 │  │  │       Participant Runtime          │  │    │
 │  │  │                                    │  │    │
-│  │  │  ┌─────────┐  ┌─────────┐         │  │    │
+│  │  │  ┌─────────┐  ┌─────────┐          │  │    │
 │  │  │  │ Agent A │◄─┤Comms    │──►Agent B│  │    │
 │  │  │  │         │  │Tool     │          │  │    │
-│  │  │  └─────────┘  └─────────┘         │  │    │
+│  │  │  └─────────┘  └─────────┘          │  │    │
 │  │  │       ▲                            │  │    │
 │  │  │       │ (same interface)           │  │    │
 │  │  │  ┌────┴────┐                       │  │    │
@@ -325,7 +325,7 @@ These features would be opt-in and incremental, building on the core session mod
 
 | Layer | Technology | Rationale |
 |---|---|---|
-| **Backend** | Node.js with JavaScript + JSDoc | Async-native, excellent LLM SDK ecosystem, loose typing provides flexibility for dynamic agent configurations |
+| **Backend** | Node.js with Typescript | Async-native, excellent LLM SDK ecosystem, strong typing provides flexibility for dynamic agent configurations |
 | **Frontend** | Vue.js 3 | Lightweight, reactive, familiar |
 | **Storage** | Filesystem (JSON) | Zero dependencies, inspectable, git-friendly, shareable with teammates |
 | **LLM Integration** | Provider adapters (Anthropic, OpenAI, Ollama, etc.) | Each agent can use a different model/provider |

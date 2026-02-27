@@ -1,5 +1,26 @@
+# Dependencies
 node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Legion workspace data (sessions are local)
+.legion/sessions/
+.legion/config.json
+
+# Environment
 .env
-.legion/runs
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
 .vscode/
-.claude/
+!.vscode/settings.json
+.idea/
+
+# Coverage
+coverage/

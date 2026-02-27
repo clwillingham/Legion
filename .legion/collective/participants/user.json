@@ -1,0 +1,25 @@
+{
+  "id": "user",
+  "type": "user",
+  "name": "User",
+  "description": "The human user interacting via the terminal",
+  "tools": {
+    "file_read": {
+      "mode": "auto"
+    },
+    "file_write": {
+      "mode": "auto"
+    },
+    "communicate": {
+      "mode": "auto"
+    },
+    "list_participants": {
+      "mode": "auto"
+    }
+  },
+  "approvalAuthority": "*",
+  "status": "active",
+  "medium": {
+    "type": "repl"
+  }
+}

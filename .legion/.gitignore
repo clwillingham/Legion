@@ -1,0 +1,11 @@
+# Legion workspace
+# Track the collective (agent definitions), ignore session data
+
+# Session data is transient — conversation logs, locks, etc.
+sessions/
+
+# Keep the collective — these are your agent definitions
+!collective/
+
+# Config is per-workspace, track it
+!config.json
