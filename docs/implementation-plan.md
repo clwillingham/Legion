@@ -26,7 +26,7 @@
 ### Package Identity
 
 - **npm scope**: `@legion`
-- **Primary package**: `@legion/cli` (the CLI/REPL entry point)
+- **Primary package**: `@legion-collective/cli` (the CLI/REPL entry point)
 - **Monorepo**: Yes — separating core engine, CLI, and future UI into distinct packages allows independent versioning and clean dependency boundaries
 
 ### Monorepo Structure
@@ -34,7 +34,7 @@
 ```
 Legion/
 ├── packages/
-│   ├── core/                          # @legion/core — The engine
+│   ├── core/                          # @legion-collective/core — The engine
 │   │   ├── src/
 │   │   │   ├── index.ts               # Public API surface
 │   │   │   ├── collective/            # Collective & participant management
@@ -84,7 +84,7 @@ Legion/
 │   │   ├── package.json
 │   │   └── tsconfig.json
 │   │
-│   ├── cli/                           # @legion/cli — REPL & CLI interface
+│   ├── cli/                           # @legion-collective/cli — REPL & CLI interface
 │   │   ├── src/
 │   │   │   ├── index.ts               # CLI entry point
 │   │   │   ├── repl/
@@ -183,16 +183,16 @@ Legion uses a layered configuration system. Settings cascade from global → wor
 ### Dependency Graph
 
 ```
-@legion/cli
-  ├── @legion/core
+@legion-collective/cli
+  ├── @legion-collective/core
   └── REPLRuntime (implements ParticipantRuntime from core)
 
 @legion/web (future)
-  ├── @legion/core
+  ├── @legion-collective/core
   └── WebRuntime (implements ParticipantRuntime from core)
 ```
 
-`@legion/core` is the engine with zero UI concerns. It defines the `ParticipantRuntime` contract and provides `AgentRuntime` and `MockRuntime`. UI packages provide their own runtime implementations for human participants (`REPLRuntime`, `WebRuntime`) and register them with the `RuntimeRegistry`. The core also exposes an event bus that UI layers subscribe to for real-time updates.
+`@legion-collective/core` is the engine with zero UI concerns. It defines the `ParticipantRuntime` contract and provides `AgentRuntime` and `MockRuntime`. UI packages provide their own runtime implementations for human participants (`REPLRuntime`, `WebRuntime`) and register them with the `RuntimeRegistry`. The core also exposes an event bus that UI layers subscribe to for real-time updates.
 
 ### Object Model
 
@@ -749,7 +749,7 @@ The future web UI subscribes to the same events via WebSocket. The core engine d
 | 1.10 Built-in Agents | ✅ Complete | Default participants on init; UR Agent + Resource Agent prompts; agent management tools (create/modify/retire) implemented + auto-registered; default agent templates deferred (Resource Agent creates agents dynamically) |
 | 1.11 CLI & REPL | 🟡 Scaffolded | CLI commands, REPL, REPLRuntime, approval prompt all built; some slash commands + streaming still needed |
 
-**Last build**: ✅ Clean (both `@legion/core` and `@legion/cli` compile with zero errors)
+**Last build**: ✅ Clean (both `@legion-collective/core` and `@legion-collective/cli` compile with zero errors)
 
 ### Milestone 1.1: Project Scaffolding ✅
 - [x] Initialize monorepo with npm workspaces
@@ -966,7 +966,7 @@ A user can:
 **Goal**: Vue.js SPA providing a rich visual experience alongside (not replacing) the REPL.
 
 ### Milestone 4.1: Server Layer
-- [ ] Express or Fastify HTTP server in `@legion/core` or a new `@legion/server` package
+- [ ] Express or Fastify HTTP server in `@legion-collective/core` or a new `@legion/server` package
 - [ ] WebSocket server for real-time event streaming
 - [ ] REST API for collective/session CRUD operations
 - [ ] Event bus → WebSocket bridge

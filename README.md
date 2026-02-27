@@ -157,8 +157,8 @@ Rejected tool calls don't crash the agent — it receives the rejection as a too
 
 | Package | Description |
 |---|---|
-| `@legion/core` | The engine — participants, sessions, conversations, runtimes, tools, providers, authorization. Zero UI concerns. |
-| `@legion/cli` | CLI entry point & interactive REPL. Provides `REPLRuntime` for terminal-based human participation. |
+| `@legion-collective/core` | The engine — participants, sessions, conversations, runtimes, tools, providers, authorization. Zero UI concerns. |
+| `@legion-collective/cli` | CLI entry point & interactive REPL. Provides `REPLRuntime` for terminal-based human participation. |
 
 ### Key Abstractions
 
@@ -272,7 +272,7 @@ Each agent can have its own model, temperature, and tool access. Agent configs l
 
 ```
 packages/
-  core/                        # @legion/core — the engine
+  core/                        # @legion-collective/core — the engine
     src/
       collective/              # Participant types, Collective CRUD, default factories
       communication/           # Message, Conversation (with locking), Session
@@ -285,7 +285,7 @@ packages/
       events/                  # EventBus & event type definitions
       errors/                  # Custom error types
 
-  cli/                         # @legion/cli — terminal interface
+  cli/                         # @legion-collective/cli — terminal interface
     src/
       commands/                # CLI commands (init, start, config, collective)
       repl/                    # REPL loop, REPLRuntime, event-driven display

@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import type { EventBus } from '@legion/core';
+import type { EventBus } from '@legion-collective/core';
 
 /**
  * Register display handlers for Legion events in the CLI.

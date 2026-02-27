@@ -1,5 +1,5 @@
 {
-  "name": "@legion/core",
+  "name": "@legion-collective/core",
   "version": "0.1.0",
   "description": "Legion core engine — participant runtime, communication, and tool system",
   "type": "module",
@@ -11,13 +11,34 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
     "dev": "tsc --watch"
   },
-  "keywords": [],
+  "keywords": [
+    "ai",
+    "agents",
+    "multi-agent",
+    "llm",
+    "collective",
+    "orchestration",
+    "framework"
+  ],
+  "author": "clwillingham",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clwillingham/Legion.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/clwillingham/Legion#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "zod": "^3.24.0"
   },

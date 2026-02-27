@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { select, input } from '@inquirer/prompts';
-import type { ApprovalRequest, ApprovalHandler } from '@legion/core';
+import type { ApprovalRequest, ApprovalHandler } from '@legion-collective/core';
 
 /**
  * createCLIApprovalHandler — creates an ApprovalHandler that prompts the user

@@ -1,9 +1,9 @@
 import { createInterface, type Interface } from 'node:readline';
 import chalk from 'chalk';
 import ora from 'ora';
-import type { Workspace } from '@legion/core';
-import { Session, AuthEngine, AgentRuntime, MockRuntime } from '@legion/core';
-import type { RuntimeContext } from '@legion/core';
+import type { Workspace } from '@legion-collective/core';
+import { Session, AuthEngine, AgentRuntime, MockRuntime } from '@legion-collective/core';
+import type { RuntimeContext } from '@legion-collective/core';
 import { REPLRuntime } from './REPLRuntime.js';
 import { registerEventHandlers } from './display.js';
 import { createCLIApprovalHandler } from '../approval/ApprovalPrompt.js';

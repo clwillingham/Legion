@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { Workspace } from '@legion/core';
+import { Workspace } from '@legion-collective/core';
 import { resolve } from 'node:path';
 import { REPL } from '../repl/REPL.js';
 

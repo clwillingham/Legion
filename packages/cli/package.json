@@ -1,12 +1,12 @@
 {
-  "name": "@legion/cli",
+  "name": "@legion-collective/cli",
   "version": "0.1.0",
   "description": "Legion CLI — REPL and command-line interface for the Legion collective",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "legion": "./dist/index.js"
+    "legion": "dist/index.js"
   },
   "exports": {
     ".": {
@@ -14,15 +14,37 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "clean": "rm -rf dist",
     "dev": "tsup --watch"
   },
-  "keywords": [],
+  "keywords": [
+    "ai",
+    "agents",
+    "multi-agent",
+    "llm",
+    "collective",
+    "orchestration",
+    "cli",
+    "repl"
+  ],
+  "author": "clwillingham",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clwillingham/Legion.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/clwillingham/Legion#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "@legion/core": "^0.1.0",
+    "@legion-collective/core": "^0.1.0",
     "chalk": "^5.4.0",
     "commander": "^13.1.0",
     "inquirer": "^12.4.0",

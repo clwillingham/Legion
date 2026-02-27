@@ -3,7 +3,7 @@ import {
   ParticipantRuntime,
   type RuntimeContext,
   type RuntimeResult,
-} from '@legion/core';
+} from '@legion-collective/core';
 import { createInterface } from 'node:readline';
 
 /**

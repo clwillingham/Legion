@@ -7,7 +7,7 @@ import {
   AgentConfigSchema,
   UserConfigSchema,
   MockConfigSchema,
-} from '@legion/core';
+} from '@legion-collective/core';
 import { resolve } from 'node:path';
 
 /**
