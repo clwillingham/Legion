@@ -3,9 +3,17 @@ import type {
   ChatOptions,
   ChatResponse,
   ProviderConfig,
+  ListModelsOptions,
+  ListModelsResult,
+  ModelInfo,
 } from './Provider.js';
 import type { Message } from '../communication/Message.js';
 import { toAnthropicMessages, toAnthropicTools } from './MessageTranslator.js';
+import {
+  getKnownModel,
+  getKnownModelsForProvider,
+  filterAndPaginateModels,
+} from './known-models.js';
 
 /**
  * AnthropicProvider — LLM provider for the Anthropic Messages API.
@@ -17,6 +25,8 @@ export class AnthropicProvider implements LLMProvider {
   readonly name = 'anthropic';
   private config: ProviderConfig;
   private clientPromise: Promise<any> | null = null;
+  private modelCache: { data: ModelInfo[]; expiry: number } | null = null;
+  private static CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   constructor(config: ProviderConfig) {
     this.config = config;
@@ -109,6 +119,60 @@ export class AnthropicProvider implements LLMProvider {
           }
         : undefined,
     };
+  }
+
+  async listModels(options: ListModelsOptions = {}): Promise<ListModelsResult> {
+    const allModels = await this.fetchModelsWithCache();
+    return filterAndPaginateModels(allModels, options);
+  }
+
+  /**
+   * Fetch models from the Anthropic API, enriched with known metadata.
+   * Results are cached in memory with a 5-minute TTL.
+   */
+  private async fetchModelsWithCache(): Promise<ModelInfo[]> {
+    if (this.modelCache && Date.now() < this.modelCache.expiry) {
+      return this.modelCache.data;
+    }
+
+    let models: ModelInfo[];
+    try {
+      const client = await this.getClient();
+      const apiModels: ModelInfo[] = [];
+
+      // Paginate through all models
+      let hasMore = true;
+      let afterId: string | undefined;
+      while (hasMore) {
+        const params: Record<string, unknown> = { limit: 100 };
+        if (afterId) params.after_id = afterId;
+        const page = await client.models.list(params);
+
+        for (const m of page.data ?? []) {
+          const known = getKnownModel(m.id);
+          apiModels.push({
+            id: m.id,
+            name: m.display_name ?? m.id,
+            provider: 'anthropic',
+            description: known?.description,
+            contextLength: known?.contextLength,
+            pricing: known?.pricing,
+            created: m.created_at,
+          });
+        }
+
+        hasMore = page.has_more ?? false;
+        afterId = page.last_id;
+      }
+
+      models = apiModels;
+    } catch {
+      // If API call fails, fall back to known models only
+      models = getKnownModelsForProvider('anthropic');
+    }
+
+    this.modelCache = { data: models, expiry: Date.now() + AnthropicProvider.CACHE_TTL_MS };
+    return models;
   }
 }
 

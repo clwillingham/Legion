@@ -68,7 +68,6 @@ export {
   getParticipantTool,
   listSessionsTool,
   listConversationsTool,
-  listModelsTool,
   searchHistoryTool,
   collectiveTools,
 } from './tools/collective-tools.js';
@@ -77,6 +76,7 @@ export {
   modifyAgentTool,
   retireAgentTool,
   listToolsTool,
+  listModelsTool,
   agentTools,
 } from './tools/agent-tools.js';
 export {
@@ -100,6 +100,10 @@ export type {
   TokenUsage,
   ProviderConfig,
   ToolDefinition,
+  ModelInfo,
+  ModelPricing,
+  ListModelsOptions,
+  ListModelsResult,
 } from './providers/Provider.js';
 export { AnthropicProvider } from './providers/AnthropicProvider.js';
 export { OpenAIProvider } from './providers/OpenAIProvider.js';
@@ -111,6 +115,14 @@ export {
   toOpenAIMessages,
   toOpenAITools,
 } from './providers/MessageTranslator.js';
+export {
+  getKnownModel,
+  getKnownModelsForProvider,
+  filterAndPaginateModels,
+  formatModelsCompact,
+  formatPrice,
+  formatContextLength,
+} from './providers/known-models.js';
 export type {
   AnthropicMessage,
   AnthropicContentBlock,

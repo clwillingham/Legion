@@ -4,6 +4,12 @@ import {
   AgentConfigSchema,
   type AgentConfig,
 } from '../collective/Participant.js';
+import { createProvider } from '../providers/ProviderFactory.js';
+import type { ListModelsOptions, ModelInfo, ProviderConfig } from '../providers/Provider.js';
+import {
+  filterAndPaginateModels,
+  formatModelsCompact,
+} from '../providers/known-models.js';
 
 /**
  * agent-tools — tools for managing agents in the collective.
@@ -510,6 +516,194 @@ export const listToolsTool: Tool = {
 };
 
 // ============================================================
+// list_models — search and list available models from providers
+// ============================================================
+
+export const listModelsTool: Tool = {
+  name: 'list_models',
+  description:
+    'Search and list available LLM models from configured providers. ' +
+    'Supports filtering by provider, searching by name/ID, sorting by price or context length, ' +
+    'and paginated results. Returns model IDs, names, pricing, and context window information.',
+
+  parameters: {
+    type: 'object',
+    properties: {
+      provider: {
+        type: 'string',
+        enum: ['anthropic', 'openai', 'openrouter'],
+        description:
+          'Filter to a single provider. Omit to query all configured providers.',
+      },
+      search: {
+        type: 'string',
+        description:
+          'Search models by name, ID, or description (case-insensitive substring match).',
+      },
+      sortBy: {
+        type: 'string',
+        enum: ['name', 'price_prompt', 'price_completion', 'context_length', 'created'],
+        description: 'Sort results by this field. Default: name.',
+      },
+      sortOrder: {
+        type: 'string',
+        enum: ['asc', 'desc'],
+        description: 'Sort direction. Default: asc.',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum models to return per page (default 20).',
+      },
+      offset: {
+        type: 'number',
+        description: 'Pagination offset (default 0).',
+      },
+      format: {
+        type: 'string',
+        enum: ['compact', 'json'],
+        description:
+          'Output format. "compact" returns a concise table-like summary. ' +
+          '"json" returns full ModelInfo objects with pagination metadata. Default: compact.',
+      },
+      category: {
+        type: 'string',
+        description: 'OpenRouter-specific category filter (e.g. "programming", "roleplay").',
+      },
+    },
+    required: [],
+  } as JSONSchema,
+
+  async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
+    const {
+      provider: providerFilter,
+      search,
+      sortBy,
+      sortOrder,
+      limit,
+      offset,
+      format = 'compact',
+      category,
+    } = args as {
+      provider?: string;
+      search?: string;
+      sortBy?: ListModelsOptions['sortBy'];
+      sortOrder?: 'asc' | 'desc';
+      limit?: number;
+      offset?: number;
+      format?: 'compact' | 'json';
+      category?: string;
+    };
+
+    const config = context.config;
+
+    // Determine which providers to query
+    const standardProviders = ['anthropic', 'openai', 'openrouter'] as const;
+    const providersToQuery = providerFilter
+      ? [providerFilter]
+      : standardProviders.filter((name) => {
+          const providers = config.get('providers') ?? {};
+          return !!(providers[name]?.apiKey || config.resolveApiKey(name));
+        });
+
+    if (providersToQuery.length === 0) {
+      return {
+        status: 'error',
+        error:
+          'No configured providers found. Configure at least one provider with an API key ' +
+          '(anthropic, openai, or openrouter) to list models.',
+      };
+    }
+
+    // Fetch models from each provider
+    const allModels: ModelInfo[] = [];
+    const errors: string[] = [];
+
+    for (const providerName of providersToQuery) {
+      try {
+        const apiKey = config.resolveApiKey(providerName);
+        if (!apiKey) {
+          errors.push(`${providerName}: no API key configured`);
+          continue;
+        }
+
+        const providers = config.get('providers') ?? {};
+        const providerConf = providers[providerName];
+        const providerConfig: ProviderConfig = {
+          provider: providerName as ProviderConfig['provider'],
+          apiKey,
+          baseUrl: providerConf?.baseUrl,
+          defaultModel: providerConf?.defaultModel,
+        };
+
+        const providerInstance = createProvider(providerConfig);
+        if (!providerInstance.listModels) {
+          errors.push(`${providerName}: listModels not supported`);
+          continue;
+        }
+
+        // Fetch full list from provider (provider handles its own cache)
+        // We pass category through for OpenRouter but apply search/sort/pagination ourselves
+        const result = await providerInstance.listModels({
+          category,
+          // Get all models — we'll sort/filter globally
+          limit: 10_000,
+          offset: 0,
+        });
+
+        allModels.push(...result.models);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        errors.push(`${providerName}: ${msg}`);
+      }
+    }
+
+    if (allModels.length === 0 && errors.length > 0) {
+      return {
+        status: 'error',
+        error: `Failed to fetch models: ${errors.join('; ')}`,
+      };
+    }
+
+    // Apply global search/sort/pagination
+    const result = filterAndPaginateModels(allModels, {
+      search,
+      sortBy,
+      sortOrder,
+      limit,
+      offset,
+    });
+
+    // Format output
+    if (format === 'json') {
+      const output: Record<string, unknown> = {
+        total: result.total,
+        limit: result.limit,
+        offset: result.offset,
+        models: result.models,
+      };
+      if (errors.length > 0) {
+        output.warnings = errors;
+      }
+      return {
+        status: 'success',
+        data: JSON.stringify(output, null, 2),
+      };
+    }
+
+    // Compact format
+    let output = formatModelsCompact(result);
+    if (errors.length > 0) {
+      output += `\n\nWarnings: ${errors.join('; ')}`;
+    }
+
+    return {
+      status: 'success',
+      data: output,
+    };
+  },
+};
+
+// ============================================================
 // All agent management tools bundled for easy registration
 // ============================================================
 
@@ -518,4 +712,5 @@ export const agentTools: Tool[] = [
   modifyAgentTool,
   retireAgentTool,
   listToolsTool,
+  listModelsTool,
 ];

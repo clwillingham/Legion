@@ -3,9 +3,17 @@ import type {
   ChatOptions,
   ChatResponse,
   ProviderConfig,
+  ListModelsOptions,
+  ListModelsResult,
+  ModelInfo,
 } from './Provider.js';
 import type { Message } from '../communication/Message.js';
 import { toOpenAIMessages, toOpenAITools } from './MessageTranslator.js';
+import {
+  getKnownModel,
+  getKnownModelsForProvider,
+  filterAndPaginateModels,
+} from './known-models.js';
 
 /**
  * OpenAIProvider — LLM provider for the OpenAI Chat Completions API.
@@ -15,10 +23,18 @@ import { toOpenAIMessages, toOpenAITools } from './MessageTranslator.js';
  *
  * Also used as the base for OpenRouter (OpenAI-compatible API).
  */
+/** Prefixes of OpenAI model IDs to exclude from chat-relevant listings. */
+const OPENAI_EXCLUDED_PREFIXES = [
+  'whisper', 'dall-e', 'tts', 'text-embedding',
+  'davinci', 'babbage', 'canary', 'codex',
+];
+
 export class OpenAIProvider implements LLMProvider {
   readonly name: string;
   private config: ProviderConfig;
   private clientPromise: Promise<any> | null = null;
+  private modelCache: { data: ModelInfo[]; expiry: number } | null = null;
+  private static CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   constructor(config: ProviderConfig, name?: string) {
     this.config = config;
@@ -118,6 +134,64 @@ export class OpenAIProvider implements LLMProvider {
           }
         : undefined,
     };
+  }
+
+  async listModels(options: ListModelsOptions = {}): Promise<ListModelsResult> {
+    const allModels = await this.fetchModelsWithCache();
+    return filterAndPaginateModels(allModels, options);
+  }
+
+  /**
+   * Fetch models from the OpenAI API, filtered to chat-relevant models
+   * and enriched with known metadata. Cached with a 5-minute TTL.
+   */
+  private async fetchModelsWithCache(): Promise<ModelInfo[]> {
+    if (this.modelCache && Date.now() < this.modelCache.expiry) {
+      return this.modelCache.data;
+    }
+
+    let models: ModelInfo[];
+    try {
+      const client = await this.getClient();
+      const response = await client.models.list();
+
+      // Collect all models from the response (may be paginated/async iterable)
+      const rawModels: Array<{ id: string; created?: number; owned_by?: string }> = [];
+      if (Symbol.asyncIterator in response) {
+        for await (const m of response) {
+          rawModels.push(m as { id: string; created?: number; owned_by?: string });
+        }
+      } else {
+        const data = (response as { data?: unknown[] }).data ?? [];
+        rawModels.push(...(data as Array<{ id: string; created?: number; owned_by?: string }>));
+      }
+
+      // Filter out non-chat models
+      const chatModels = rawModels.filter(
+        (m) => !OPENAI_EXCLUDED_PREFIXES.some((prefix) => m.id.startsWith(prefix)),
+      );
+
+      models = chatModels.map((m) => {
+        const known = getKnownModel(m.id);
+        return {
+          id: m.id,
+          name: known?.name ?? m.id,
+          provider: this.name,
+          description: known?.description,
+          contextLength: known?.contextLength,
+          pricing: known?.pricing,
+          created: m.created
+            ? new Date(m.created * 1000).toISOString()
+            : undefined,
+        };
+      });
+    } catch {
+      // If API call fails, fall back to known models only
+      models = getKnownModelsForProvider('openai');
+    }
+
+    this.modelCache = { data: models, expiry: Date.now() + OpenAIProvider.CACHE_TTL_MS };
+    return models;
   }
 }
 

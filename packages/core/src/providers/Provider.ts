@@ -20,6 +20,88 @@ export interface LLMProvider {
    * @returns The assistant's response in canonical format.
    */
   chat(messages: Message[], options: ChatOptions): Promise<ChatResponse>;
+
+  /**
+   * List available models from this provider.
+   *
+   * @param options - Filtering, sorting, and pagination options.
+   * @returns Paginated list of models with metadata.
+   */
+  listModels?(options?: ListModelsOptions): Promise<ListModelsResult>;
+}
+
+// ============================================================
+// Model listing types
+// ============================================================
+
+/**
+ * Pricing information for an LLM model (USD per million tokens).
+ */
+export interface ModelPricing {
+  /** USD per million input tokens. */
+  promptPerMTok: number;
+  /** USD per million output tokens. */
+  completionPerMTok: number;
+  /** USD per million cached input token reads. */
+  cacheReadPerMTok?: number;
+  /** USD per million cached input token writes. */
+  cacheWritePerMTok?: number;
+}
+
+/**
+ * Canonical model information returned by listModels().
+ */
+export interface ModelInfo {
+  /** Model identifier used in API requests (e.g. "claude-sonnet-4-6"). */
+  id: string;
+  /** Human-readable display name (e.g. "Claude Sonnet 4.6"). */
+  name: string;
+  /** Provider identifier (e.g. "anthropic", "openai", "openrouter"). */
+  provider: string;
+  /** Description of the model's capabilities. */
+  description?: string;
+  /** Maximum context window in tokens. */
+  contextLength?: number;
+  /** Pricing per million tokens. */
+  pricing?: ModelPricing;
+  /** ISO date when the model was created/added. */
+  created?: string;
+  /** Supported input/output modalities. */
+  modalities?: { input: string[]; output: string[] };
+  /** Supported API parameters (e.g. "tools", "temperature"). */
+  supportedParameters?: string[];
+}
+
+/**
+ * Options for filtering, sorting, and paginating model lists.
+ */
+export interface ListModelsOptions {
+  /** Filter by name/id substring (case-insensitive). */
+  search?: string;
+  /** Sort results by this field. Default: 'name'. */
+  sortBy?: 'name' | 'price_prompt' | 'price_completion' | 'context_length' | 'created';
+  /** Sort direction. Default: 'asc'. */
+  sortOrder?: 'asc' | 'desc';
+  /** Maximum models to return (default 20). */
+  limit?: number;
+  /** Pagination offset (default 0). */
+  offset?: number;
+  /** OpenRouter-specific category filter. */
+  category?: string;
+}
+
+/**
+ * Paginated result from listModels().
+ */
+export interface ListModelsResult {
+  /** Current page of model results. */
+  models: ModelInfo[];
+  /** Total number of matching models (before limit/offset). */
+  total: number;
+  /** Limit that was applied. */
+  limit: number;
+  /** Offset that was applied. */
+  offset: number;
 }
 
 /**

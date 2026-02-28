@@ -1,6 +1,6 @@
 {
   "name": "@legion-collective/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Legion core engine — participant runtime, communication, and tool system",
   "type": "module",
   "main": "./dist/index.js",

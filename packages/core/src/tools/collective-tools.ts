@@ -31,25 +31,37 @@ export const listParticipantsTool: Tool = {
         enum: ['agent', 'user', 'mock'],
         description: 'Optional filter by participant type.',
       },
+      name: {
+        type: 'string',
+        description: 'Optional filter by participant name (case-insensitive substring match).',
+      },
       includeRetired: {
         type: 'boolean',
         description: 'Whether to include retired participants. Defaults to false.',
+      },
+      includeSystemPrompt: {
+        type: 'boolean',
+        description: 'Whether to include the system prompt for each participant. Defaults to false.',
       },
     },
     required: [],
   } as JSONSchema,
 
   async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
-    const { type: typeFilter, includeRetired } = args as {
+    const { type: typeFilter, includeRetired, includeSystemPrompt, name } = args as {
       type?: string;
       includeRetired?: boolean;
+      includeSystemPrompt?: boolean;
+      name?: string;
     };
 
     const collective = context.session.collective;
     const statusFilter = includeRetired ? undefined : 'active';
     const participants = collective.list({ type: typeFilter, status: statusFilter });
 
-    const summary = participants.map((p) => ({
+    const summary = participants
+        .filter(p => !name || p.name.toLowerCase().includes(name.toLowerCase()))
+        .map((p) => ({
       id: p.id,
       name: p.name,
       type: p.type,
@@ -60,6 +72,9 @@ export const listParticipantsTool: Tool = {
         : {}),
       ...(p.type === 'user'
         ? { medium: (p as UserConfig).medium.type }
+        : {}),
+      ...(includeSystemPrompt && p.type === 'agent'
+        ? { systemPrompt: (p as AgentConfig).systemPrompt }
         : {}),
     }));
 
@@ -224,67 +239,6 @@ export const listConversationsTool: Tool = {
 };
 
 // ============================================================
-// list_models — list available/configured models
-// ============================================================
-
-export const listModelsTool: Tool = {
-  name: 'list_models',
-  description:
-    'List all configured LLM providers and models. ' +
-    'Shows which providers have API keys configured and what models agents are using.',
-
-  parameters: {
-    type: 'object',
-    properties: {},
-    required: [],
-  } as JSONSchema,
-
-  async execute(_args: unknown, context: RuntimeContext): Promise<ToolResult> {
-    const config = context.config;
-    const collective = context.session.collective;
-
-    // Gather provider configuration
-    const providers = config.get('providers') ?? {};
-    const providerInfo = Object.entries(providers).map(([name, conf]) => ({
-      provider: name,
-      hasApiKey: !!(conf.apiKey || config.resolveApiKey(name)),
-      baseUrl: conf.baseUrl,
-      defaultModel: conf.defaultModel,
-    }));
-
-    // Also check standard env vars for providers not explicitly configured
-    const standardProviders = ['anthropic', 'openai', 'openrouter'] as const;
-    for (const name of standardProviders) {
-      if (!providerInfo.some((p) => p.provider === name)) {
-        const apiKey = config.resolveApiKey(name);
-        if (apiKey) {
-          providerInfo.push({
-            provider: name,
-            hasApiKey: true,
-            baseUrl: undefined,
-            defaultModel: undefined,
-          });
-        }
-      }
-    }
-
-    // Gather models actively used by agents
-    const agents = collective.list({ type: 'agent', status: 'active' }) as AgentConfig[];
-    const activeModels = agents.map((a) => ({
-      agentId: a.id,
-      agentName: a.name,
-      provider: a.model.provider,
-      model: a.model.model,
-    }));
-
-    return {
-      status: 'success',
-      data: JSON.stringify({ providers: providerInfo, activeModels }, null, 2),
-    };
-  },
-};
-
-// ============================================================
 // search_history — search conversation history in current session
 // ============================================================
 
@@ -387,6 +341,5 @@ export const collectiveTools: Tool[] = [
   getParticipantTool,
   listSessionsTool,
   listConversationsTool,
-  listModelsTool,
   searchHistoryTool,
 ];
