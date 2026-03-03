@@ -902,18 +902,29 @@ A user can:
 
 **Goal**: Agents can execute and monitor shell processes, expanding their ability to do real work (run tests, build projects, start servers, etc.).
 
-### Milestone 2.1: Process Management Tool
-- [ ] `process_exec` tool — run a shell command and return output
-  - Configurable timeout
-  - Working directory (relative to workspace)
-  - Capture stdout/stderr
-  - Return exit code
-- [ ] `process_start` tool — start a long-running process (e.g., dev server)
-  - Returns a process handle/ID
-  - Background execution
-- [ ] `process_status` tool — check if a background process is running, get recent output
-- [ ] `process_stop` tool — terminate a background process
-- [ ] Process registry — track running processes per session
+### Milestone 2.1: Process Management ✅
+- [x] `process_exec` tool — run a shell command and return stdout/stderr/exit code
+  - Configurable timeout (default 30s, 0 = unlimited)
+  - Working directory (relative to workspace, boundary-enforced)
+  - Output truncation (configurable max output size, head+tail preservation)
+  - Command blocklist (configurable, blocks destructive commands)
+  - Environment variable passthrough
+- [x] `process_start` tool — start a long-running background process
+  - Returns process ID, detached with process group for clean cleanup
+  - Background execution with output ring buffer capture
+- [x] `process_status` tool — check status and recent output of a tracked process
+- [x] `process_stop` tool — SIGTERM → grace period → SIGKILL
+- [x] `process_list` tool — list all tracked processes with state/mode filtering
+- [x] `ProcessRegistry` — session-scoped process tracking with concurrency limits, static singleton
+- [x] `OutputBuffer` — ring buffer output capture (configurable line limit)
+- [x] Config schema: `ProcessManagementSchema` (shell, timeout, maxOutputSize, maxConcurrentProcesses, maxOutputLines, blocklist)
+- [x] Event types: `ProcessStartedEvent`, `ProcessOutputEvent`, `ProcessCompletedEvent`, `ProcessErrorEvent`
+- [x] Default authorization policies for all 5 process tools
+- [x] Workspace registration + REPL lifecycle (create/cleanup registry, process event display)
+- [x] **208 tests** (28 OutputBuffer + 27 ProcessRegistry + 62 unit + 30 integration + 61 known-models)
+- [x] Test convention: `*.test.ts` (unit), `*.integration.test.ts` (integration); `npm run test:unit` / `npm run test:integration`
+
+**Architecture**: `process/` directory contains `ProcessRegistry.ts`, `OutputBuffer.ts`, `process-helpers.ts`, `process-events.ts`. Tool definitions in `tools/process-tools.ts`. See `docs/phase-2-process-management.md` for full design doc.
 
 ### Milestone 2.2: Enhanced File Tools ✅ (implemented early)
 - [x] `file_analyze` — return file metadata (size, type, line count, modified/created time, extension) to help agents decide how to read
@@ -926,10 +937,11 @@ A user can:
 - [x] `file_delete` — delete a file (with workspace boundary check)
 - [x] `file_move` — move/rename a file or directory with auto-mkdir for destination
 
-### Milestone 2.3: Extended Collective Tools
-- [ ] `inspect_participant` — detailed view of a participant's config
-- [ ] `inspect_session` — view conversation history for a session
-- [ ] Improved `search_history` with filtering and context
+### Milestone 2.3: Extended Collective Tools ✅
+- [x] Enhanced `get_participant` — structured output with type-specific fields (model/systemPrompt for agents, medium for users), optional `includeConversations` showing per-conversation activity (message counts, last activity, last role), optional `includeToolPolicies` toggle
+- [x] New `inspect_session` tool — view message history of a specific conversation with pagination (`offset`/`limit`), `role` filter, `includeToolCalls` flag, content truncation (500 chars), `hasMore` indicator
+- [x] Enhanced `search_history` — `isRegex` flag for regex pattern matching (with error handling), `role` filter, `contextLines` (0–5 surrounding messages), `messageIndex` in results, improved content truncation (300 chars)
+- [x] 39 unit tests covering all 3 enhanced/new tools in `collective-tools.test.ts`
 
 ### Milestone 2.4: REPL Enhancements
 - [ ] Display background process output on demand
@@ -1113,7 +1125,7 @@ Decisions that can be deferred but should be tracked:
 | Phase | Scope | Estimated Duration |
 |---|---|---|
 | **Phase 1** | Core Engine MVP | 6–8 weeks |
-| **Phase 2** | Process Management & Extended Tools | 2–3 weeks |
+| **Phase 2** | Process Management & Extended Tools | 2–3 weeks (2.1 + 2.2 + 2.3 complete) |
 | **Phase 3** | Authorization & Approval | 2–3 weeks |
 | **Phase 4** | Web Interface | 4–6 weeks |
 | **Phase 5** | Learning & Memory | 3–4 weeks |

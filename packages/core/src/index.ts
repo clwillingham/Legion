@@ -68,6 +68,7 @@ export {
   getParticipantTool,
   listSessionsTool,
   listConversationsTool,
+  inspectSessionTool,
   searchHistoryTool,
   collectiveTools,
 } from './tools/collective-tools.js';
