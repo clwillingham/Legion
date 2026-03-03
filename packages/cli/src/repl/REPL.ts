@@ -69,13 +69,18 @@ export class REPL {
 
   /**
    * Build the prompt string showing who you're talking to.
+   * Includes a background process count indicator when processes are running.
    */
   private buildPrompt(): string {
     const target = chalk.dim(`[→ ${this.currentTarget}`);
     const convo = this.currentConversation
       ? chalk.dim(` (${this.currentConversation})`)
       : '';
-    return `${target}${convo}${chalk.dim(']')} ${chalk.green('you> ')}`;
+    const bgCount = this.processRegistry?.runningCount() ?? 0;
+    const bgIndicator = bgCount > 0
+      ? chalk.magenta(` [${bgCount} bg]`)
+      : '';
+    return `${target}${convo}${chalk.dim(']')}${bgIndicator} ${chalk.green('you> ')}`;
   }
 
   /**
@@ -223,14 +228,27 @@ export class REPL {
     switch (command) {
       case 'help':
         console.log(chalk.bold('\nCommands:'));
+        console.log(chalk.dim('  General'));
         console.log('  /help                    — Show this help');
         console.log('  /quit                    — Exit the session');
+        console.log();
+        console.log(chalk.dim('  Conversation'));
         console.log('  /agent [id]              — Show or switch the target agent');
         console.log('  /convo [name]            — Show or switch the conversation name');
         console.log('  /convo clear             — Clear conversation name (use default)');
         console.log('  /send <id> <msg>         — One-off message to a specific participant');
+        console.log('  /conversations           — List conversations in the current session');
+        console.log('  /history [n]             — Show last n messages (default 20)');
+        console.log();
+        console.log(chalk.dim('  Collective & Tools'));
         console.log('  /collective              — List participants');
         console.log('  /session                 — Show session info');
+        console.log('  /tools                   — List tools available to the current target');
+        console.log();
+        console.log(chalk.dim('  Processes'));
+        console.log('  /ps                      — List tracked processes');
+        console.log('  /output <id> [lines]     — Show recent output from a process');
+        console.log('  /kill <id>               — Stop a background process');
         console.log();
         break;
 
@@ -337,6 +355,220 @@ export class REPL {
         const [targetId, ...msgParts] = args;
         const message = msgParts.join(' ');
         await this.sendMessage(targetId, message);
+        break;
+      }
+
+      case 'conversations': {
+        if (!this.session) {
+          console.log(chalk.yellow('\n  No active session.'));
+          break;
+        }
+        const convos = this.session.listConversations();
+        if (convos.length === 0) {
+          console.log(chalk.dim('\n  No conversations yet.'));
+        } else {
+          console.log(chalk.bold(`\nConversations (${convos.length}):`))
+          for (const c of convos) {
+            const name = c.data.name ? ` [${c.data.name}]` : '';
+            const msgCount = c.data.messages.length;
+            const isCurrent =
+              c.data.initiatorId === 'user' &&
+              c.data.targetId === this.currentTarget &&
+              c.data.name === this.currentConversation;
+            const marker = isCurrent ? chalk.green(' ← current') : '';
+            console.log(
+              `  ${c.data.initiatorId} → ${c.data.targetId}${name}  ` +
+              chalk.dim(`(${msgCount} msgs)`) + marker,
+            );
+          }
+        }
+        console.log();
+        break;
+      }
+
+      case 'history': {
+        if (!this.session) {
+          console.log(chalk.yellow('\n  No active session.'));
+          break;
+        }
+        const count = args.length > 0 ? parseInt(args[0], 10) : 20;
+        if (isNaN(count) || count < 1) {
+          console.log(chalk.yellow('Usage: /history [n]  (n must be a positive number)'));
+          break;
+        }
+        // Find the current conversation
+        const allConvos = this.session.listConversations();
+        const currentConvo = allConvos.find(
+          (c) =>
+            c.data.initiatorId === 'user' &&
+            c.data.targetId === this.currentTarget &&
+            c.data.name === this.currentConversation,
+        );
+        if (!currentConvo || currentConvo.data.messages.length === 0) {
+          console.log(chalk.dim('\n  No messages in the current conversation yet.'));
+          console.log();
+          break;
+        }
+        const msgs = currentConvo.data.messages;
+        const start = Math.max(0, msgs.length - count);
+        const shown = msgs.slice(start);
+        const label = this.currentConversation
+          ? `you → ${this.currentTarget} [${this.currentConversation}]`
+          : `you → ${this.currentTarget}`;
+        console.log(
+          chalk.bold(`\nHistory: ${label}`) +
+          chalk.dim(` (showing ${shown.length} of ${msgs.length})`),
+        );
+        for (const m of shown) {
+          const time = new Date(m.timestamp).toLocaleTimeString();
+          const roleColor = m.role === 'user' ? chalk.green : chalk.cyan;
+          const name = m.role === 'user' ? 'you' : this.currentTarget;
+          const toolInfo = m.toolCalls?.length
+            ? chalk.dim(` [${m.toolCalls.length} tool call${m.toolCalls.length > 1 ? 's' : ''}]`)
+            : '';
+          const content = m.content.length > 200
+            ? m.content.slice(0, 200) + chalk.dim('...')
+            : m.content;
+          console.log(`  ${chalk.dim(time)} ${roleColor(name + '>')} ${content}${toolInfo}`);
+        }
+        console.log();
+        break;
+      }
+
+      case 'tools': {
+        const target = this.workspace.collective.get(this.currentTarget);
+        if (!target) {
+          console.log(chalk.red(`\n  ✗ Unknown participant: ${this.currentTarget}`));
+          break;
+        }
+        const resolved = this.workspace.toolRegistry.resolveForParticipant(target.tools);
+        if (resolved.length === 0) {
+          console.log(chalk.dim('\n  No tools available for this participant.'));
+        } else {
+          console.log(chalk.bold(`\nTools for ${chalk.cyan(this.currentTarget)} (${resolved.length}):`));
+          for (const t of resolved) {
+            const policy = target.tools[t.name] ?? target.tools['*'];
+            const mode = policy ? chalk.dim(` [${policy.mode}]`) : '';
+            console.log(`  ${chalk.cyan(t.name)}${mode}`);
+            console.log(chalk.dim(`    ${t.description}`));
+          }
+        }
+        console.log();
+        break;
+      }
+
+      case 'ps': {
+        if (!this.processRegistry) {
+          console.log(chalk.dim('\n  Process registry not initialized.'));
+          console.log();
+          break;
+        }
+        const procs = this.processRegistry.list('all');
+        if (procs.length === 0) {
+          console.log(chalk.dim('\n  No tracked processes.'));
+        } else {
+          const running = procs.filter((p) => p.state === 'running');
+          const exited = procs.filter((p) => p.state === 'exited');
+          console.log(chalk.bold(`\nProcesses (${running.length} running, ${exited.length} exited):`));
+          for (const p of procs) {
+            const label = p.label ? ` (${p.label})` : '';
+            const cmd = p.command.length > 60 ? p.command.slice(0, 57) + '...' : p.command;
+            if (p.state === 'running') {
+              const elapsed = Math.round((Date.now() - p.startedAt.getTime()) / 1000);
+              const duration = elapsed < 60
+                ? `${elapsed}s`
+                : `${Math.floor(elapsed / 60)}m${elapsed % 60}s`;
+              console.log(
+                chalk.green(`  #${p.processId}`) +
+                ` ${cmd}${label}` +
+                chalk.dim(` — running ${duration}, pid ${p.pid}`),
+              );
+            } else {
+              const exitColor = p.exitCode === 0 ? chalk.green : chalk.red;
+              console.log(
+                chalk.dim(`  #${p.processId}`) +
+                ` ${cmd}${label}` +
+                exitColor(` — exited (${p.exitCode})`),
+              );
+            }
+          }
+        }
+        console.log();
+        break;
+      }
+
+      case 'output': {
+        if (!this.processRegistry) {
+          console.log(chalk.dim('\n  Process registry not initialized.'));
+          console.log();
+          break;
+        }
+        if (args.length === 0) {
+          console.log(chalk.yellow('Usage: /output <processId> [lines]'));
+          break;
+        }
+        const procId = parseInt(args[0], 10);
+        if (isNaN(procId)) {
+          console.log(chalk.yellow('  Process ID must be a number.'));
+          break;
+        }
+        const proc = this.processRegistry.get(procId);
+        if (!proc) {
+          console.log(chalk.red(`\n  ✗ No process with ID #${procId}`));
+          console.log();
+          break;
+        }
+        const lineCount = args.length > 1 ? parseInt(args[1], 10) : 50;
+        const outputLines = isNaN(lineCount) || lineCount < 1 ? 50 : lineCount;
+        const output = proc.output.tail(outputLines);
+        const procLabel = proc.label ? ` (${proc.label})` : '';
+        console.log(
+          chalk.bold(`\nOutput from #${procId}${procLabel}:`) +
+          chalk.dim(` ${proc.command}`),
+        );
+        if (!output) {
+          console.log(chalk.dim('  (no output)'));
+        } else {
+          console.log(output);
+        }
+        console.log();
+        break;
+      }
+
+      case 'kill': {
+        if (!this.processRegistry) {
+          console.log(chalk.dim('\n  Process registry not initialized.'));
+          console.log();
+          break;
+        }
+        if (args.length === 0) {
+          console.log(chalk.yellow('Usage: /kill <processId>'));
+          break;
+        }
+        const killId = parseInt(args[0], 10);
+        if (isNaN(killId)) {
+          console.log(chalk.yellow('  Process ID must be a number.'));
+          break;
+        }
+        const killProc = this.processRegistry.get(killId);
+        if (!killProc) {
+          console.log(chalk.red(`\n  ✗ No process with ID #${killId}`));
+          console.log();
+          break;
+        }
+        if (killProc.state !== 'running') {
+          console.log(chalk.dim(`\n  Process #${killId} is already exited (code ${killProc.exitCode}).`));
+          console.log();
+          break;
+        }
+        try {
+          await this.processRegistry.stop(killId);
+          console.log(chalk.green(`\n  ✓ Process #${killId} stopped.`));
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.log(chalk.red(`\n  ✗ Failed to stop process #${killId}: ${errMsg}`));
+        }
+        console.log();
         break;
       }
 

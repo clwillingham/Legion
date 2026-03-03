@@ -873,7 +873,8 @@ The future web UI subscribes to the same events via WebSocket. The core engine d
   - [x] Display agent responses with formatting (EventBus-based `display.ts`)
   - [x] Show tool call activity via event handlers
   - [x] Slash commands: `/help`, `/quit`, `/collective`, `/session`, `/send`
-  - [ ] Additional slash commands: `/conversations`, `/history`, `/switch`, `/new`, `/tools`
+  - [x] Additional slash commands: `/conversations`, `/history`, `/tools`, `/agent`, `/convo`
+  - [x] Process slash commands: `/ps`, `/output`, `/kill`
 - [ ] Streaming support (display tokens as they arrive, if provider supports it)
 
 ### Phase 1 Definition of Done
@@ -943,10 +944,15 @@ A user can:
 - [x] Enhanced `search_history` — `isRegex` flag for regex pattern matching (with error handling), `role` filter, `contextLines` (0–5 surrounding messages), `messageIndex` in results, improved content truncation (300 chars)
 - [x] 39 unit tests covering all 3 enhanced/new tools in `collective-tools.test.ts`
 
-### Milestone 2.4: REPL Enhancements
-- [ ] Display background process output on demand
-- [ ] Process status indicators
-- [ ] Better slash commands for process management
+### Milestone 2.4: REPL Enhancements ✅
+- [x] Process prompt indicator — show background process count in prompt when processes are running (e.g. `[2 bg]`)
+- [x] `/ps` — list tracked processes (ID, command, state, label, uptime/duration)
+- [x] `/output <id>` — display recent output from a background process's ring buffer
+- [x] `/kill <id>` — stop a background process from the REPL
+- [x] `/conversations` — list conversations in the current session
+- [x] `/history [n]` — show recent messages in the current conversation (default last 20)
+- [x] `/tools` — list tools available to the current target agent
+- [x] Updated `/help` with all new commands organized into categories
 
 ---
 
@@ -1125,7 +1131,7 @@ Decisions that can be deferred but should be tracked:
 | Phase | Scope | Estimated Duration |
 |---|---|---|
 | **Phase 1** | Core Engine MVP | 6–8 weeks |
-| **Phase 2** | Process Management & Extended Tools | 2–3 weeks (2.1 + 2.2 + 2.3 complete) |
+| **Phase 2** | Process Management & Extended Tools | 2–3 weeks (2.1–2.4 complete ✅) |
 | **Phase 3** | Authorization & Approval | 2–3 weeks |
 | **Phase 4** | Web Interface | 4–6 weeks |
 | **Phase 5** | Learning & Memory | 3–4 weeks |
