@@ -30,7 +30,8 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0"
+    "@anthropic-ai/sdk": "^0.78.0",
+    "openai": "^6.25.0"
   },
   "devDependencies": {
     "vitest": "^4.0.18"

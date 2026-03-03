@@ -16,6 +16,7 @@ import { fileWriteTool } from '../tools/file-write.js';
 import { collectiveTools } from '../tools/collective-tools.js';
 import { agentTools } from '../tools/agent-tools.js';
 import { fileTools } from '../tools/file-tools.js';
+import { processTools } from '../tools/process-tools.js';
 
 /**
  * Workspace — the root context for a Legion project.
@@ -94,6 +95,7 @@ export class Workspace {
       ...collectiveTools,
       ...agentTools,
       ...fileTools,
+      ...processTools,
     ];
 
     for (const tool of allTools) {

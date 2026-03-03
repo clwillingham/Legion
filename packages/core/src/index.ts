@@ -138,6 +138,7 @@ export type {
   GlobalConfig,
   RuntimeLimits,
   AuthPolicy,
+  ProcessManagementConfig,
 } from './config/ConfigSchema.js';
 export {
   WorkspaceConfigSchema,
@@ -145,6 +146,7 @@ export {
   RuntimeLimitsSchema,
   AuthPolicySchema,
   ProviderConfigSchema,
+  ProcessManagementSchema,
 } from './config/ConfigSchema.js';
 export { Config } from './config/Config.js';
 
@@ -166,6 +168,10 @@ export type {
   SessionEndedEvent,
   IterationEvent,
   ErrorEvent,
+  ProcessStartedEvent,
+  ProcessOutputEvent,
+  ProcessCompletedEvent,
+  ProcessErrorEvent,
 } from './events/events.js';
 export { EventBus } from './events/EventBus.js';
 
@@ -193,3 +199,26 @@ export {
   resolvePolicy,
   DEFAULT_TOOL_POLICIES,
 } from './authorization/policies.js';
+
+// --- Process Management ---
+export { OutputBuffer } from './process/OutputBuffer.js';
+export { ProcessRegistry } from './process/ProcessRegistry.js';
+export type {
+  ProcessEntry,
+  ProcessState,
+  ProcessMode,
+  RegisterProcessOptions,
+} from './process/ProcessRegistry.js';
+export {
+  processExecTool,
+  processStartTool,
+  processStatusTool,
+  processStopTool,
+  processListTool,
+  processTools,
+  resolveCwd,
+  isBlocked,
+  truncateOutput,
+  setProcessRegistry,
+  getProcessRegistry,
+} from './tools/process-tools.js';

@@ -2,7 +2,7 @@ import { createInterface, type Interface } from 'node:readline';
 import chalk from 'chalk';
 import ora from 'ora';
 import type { Workspace } from '@legion-collective/core';
-import { Session, AuthEngine, AgentRuntime, MockRuntime } from '@legion-collective/core';
+import { Session, AuthEngine, AgentRuntime, MockRuntime, ProcessRegistry } from '@legion-collective/core';
 import type { RuntimeContext } from '@legion-collective/core';
 import { REPLRuntime } from './REPLRuntime.js';
 import { registerEventHandlers } from './display.js';
@@ -24,6 +24,7 @@ export class REPL {
   private rl: Interface | null = null;
   private sessionName?: string;
   private authEngine: AuthEngine;
+  private processRegistry: ProcessRegistry | null = null;
 
   /** The participant ID that bare messages are sent to */
   private currentTarget: string = 'ur-agent';
@@ -91,6 +92,10 @@ export class REPL {
     this.workspace.runtimeRegistry.register('agent', () => new AgentRuntime());
     this.workspace.runtimeRegistry.register('mock', () => new MockRuntime());
 
+    // Create session-scoped ProcessRegistry and wire it into tools
+    this.processRegistry = new ProcessRegistry();
+    ProcessRegistry.setInstance(this.processRegistry);
+
     // Wire up event handlers for display
     registerEventHandlers(this.workspace.eventBus);
 
@@ -156,7 +161,8 @@ export class REPL {
       }
     });
 
-    this.rl.on('close', () => {
+    this.rl.on('close', async () => {
+      await this.cleanup();
       console.log(chalk.dim('\nSession ended.'));
       process.exit(0);
     });
@@ -230,6 +236,7 @@ export class REPL {
 
       case 'quit':
       case 'exit':
+        await this.cleanup();
         console.log(chalk.dim('Session ended.'));
         process.exit(0);
 
@@ -360,6 +367,20 @@ export class REPL {
         resolve(answer);
       });
     });
+  }
+
+  /**
+   * Clean up session resources (kill background processes, etc.).
+   */
+  private async cleanup(): Promise<void> {
+    if (this.processRegistry) {
+      const running = this.processRegistry.runningCount();
+      if (running > 0) {
+        console.log(chalk.dim(`\n  Stopping ${running} background process${running === 1 ? '' : 'es'}...`));
+      }
+      await this.processRegistry.killAll();
+      this.processRegistry = null;
+    }
   }
 
   /**

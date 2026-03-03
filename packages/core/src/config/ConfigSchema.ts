@@ -39,6 +39,29 @@ export const AuthPolicySchema = z.object({
 });
 
 /**
+ * Process management configuration schema.
+ */
+export const ProcessManagementSchema = z.object({
+  /** Shell to use for command execution. Default: '/bin/sh' */
+  shell: z.string().optional(),
+
+  /** Default timeout for process_exec in seconds. Default: 30. 0 = no timeout. */
+  defaultTimeout: z.number().min(0).optional(),
+
+  /** Max output size in bytes before truncation. Default: 51200 (50KB) */
+  maxOutputSize: z.number().min(1024).optional(),
+
+  /** Max concurrent background processes. Default: 10. 0 = unlimited. */
+  maxConcurrentProcesses: z.number().min(0).optional(),
+
+  /** Max lines to buffer per background process. Default: 10000 */
+  maxOutputLines: z.number().min(100).optional(),
+
+  /** Command blocklist — patterns that are always rejected (substring match) */
+  blocklist: z.array(z.string()).optional(),
+});
+
+/**
  * Workspace-level configuration schema.
  */
 export const WorkspaceConfigSchema = z.object({
@@ -59,6 +82,9 @@ export const WorkspaceConfigSchema = z.object({
 
   /** Logging level. */
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).optional(),
+
+  /** Process management settings. */
+  processManagement: ProcessManagementSchema.optional(),
 });
 
 /**
@@ -73,3 +99,4 @@ export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
 export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;
 export type RuntimeLimits = z.infer<typeof RuntimeLimitsSchema>;
 export type AuthPolicy = z.infer<typeof AuthPolicySchema>;
+export type ProcessManagementConfig = z.infer<typeof ProcessManagementSchema>;

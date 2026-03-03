@@ -60,4 +60,24 @@ export function registerEventHandlers(eventBus: EventBus): void {
   eventBus.on('error', (event) => {
     console.log(chalk.red(`  ✗ Error: ${event.error.message}`));
   });
+
+  eventBus.on('process:started', (event) => {
+    const label = event.label ? ` (${event.label})` : '';
+    console.log(
+      chalk.cyan(`  🚀 Process #${event.processId} started: ${event.command}${label}`),
+    );
+  });
+
+  eventBus.on('process:completed', (event) => {
+    const icon = event.exitCode === 0 ? '✓' : '✗';
+    const color = event.exitCode === 0 ? chalk.green : chalk.red;
+    const duration = (event.durationMs / 1_000).toFixed(1);
+    console.log(
+      color(`  ${icon} Process #${event.processId} exited (code ${event.exitCode}, ${duration}s)`),
+    );
+  });
+
+  eventBus.on('process:error', (event) => {
+    console.log(chalk.red(`  ⚠ Process #${event.processId} error: ${event.error}`));
+  });
 }

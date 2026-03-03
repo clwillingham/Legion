@@ -88,6 +88,49 @@ export interface ErrorEvent {
   timestamp: Date;
 }
 
+// ── Process Events ─────────────────────────────────────────────
+
+export interface ProcessStartedEvent {
+  type: 'process:started';
+  sessionId: string;
+  participantId: string;
+  processId: number;
+  pid: number;
+  command: string;
+  label?: string;
+  mode: 'sync' | 'background';
+  timestamp: Date;
+}
+
+export interface ProcessOutputEvent {
+  type: 'process:output';
+  sessionId: string;
+  processId: number;
+  output: string;
+  stream: 'stdout' | 'stderr';
+  timestamp: Date;
+}
+
+export interface ProcessCompletedEvent {
+  type: 'process:completed';
+  sessionId: string;
+  processId: number;
+  command: string;
+  exitCode: number | null;
+  signal: string | null;
+  durationMs: number;
+  mode: 'sync' | 'background';
+  timestamp: Date;
+}
+
+export interface ProcessErrorEvent {
+  type: 'process:error';
+  sessionId: string;
+  processId: number;
+  error: string;
+  timestamp: Date;
+}
+
 /**
  * Union of all event types.
  */
@@ -101,7 +144,11 @@ export type LegionEvent =
   | SessionStartedEvent
   | SessionEndedEvent
   | IterationEvent
-  | ErrorEvent;
+  | ErrorEvent
+  | ProcessStartedEvent
+  | ProcessOutputEvent
+  | ProcessCompletedEvent
+  | ProcessErrorEvent;
 
 /**
  * Map event type strings to their event interfaces.
@@ -117,4 +164,8 @@ export type EventMap = {
   'session:ended': SessionEndedEvent;
   iteration: IterationEvent;
   error: ErrorEvent;
+  'process:started': ProcessStartedEvent;
+  'process:output': ProcessOutputEvent;
+  'process:completed': ProcessCompletedEvent;
+  'process:error': ProcessErrorEvent;
 };

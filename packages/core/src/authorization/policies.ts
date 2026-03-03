@@ -26,6 +26,13 @@ export const DEFAULT_TOOL_POLICIES: Record<string, AuthorizationPolicy> = {
 
   // Communication — auto (depth limits provide safety)
   communicate: 'auto',
+
+  // Process tools — execution requires approval, queries are auto
+  process_exec: 'requires_approval',
+  process_start: 'requires_approval',
+  process_stop: 'auto',
+  process_status: 'auto',
+  process_list: 'auto',
 };
 
 /**
