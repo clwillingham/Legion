@@ -68,6 +68,17 @@ export const createAgentTool: Tool = {
           'values are objects with a "mode" field ("auto" or "requires_approval"). ' +
           'Defaults to {"communicate": {"mode": "auto"}, "list_participants": {"mode": "auto"}}.',
       },
+      approvalAuthority: {
+        description:
+          'Approval delegation authority — controls which tool calls the agent can approve inline ' +
+          'for downstream agents it delegates to via communicate. ' +
+          'Use "*" for full authority over everything. ' +
+          'Use a record mapping participant IDs (or "*" for any agent) to an allow-list of tool names, ' +
+          'e.g. {"*": ["file_write", "process_exec"]}. ' +
+          'For fine-grained scope control, use a rules map per tool: ' +
+          '{"*": {"file_write": [{"mode": "auto", "scope": {"paths": ["src/**"]}}, {"mode": "deny"}]}}. ' +
+          'Defaults to {} (no delegation authority — all approvals escalate to the user).',
+      },
       temperature: {
         type: 'number',
         description: 'Model temperature (0-2). Optional.',
@@ -89,6 +100,7 @@ export const createAgentTool: Tool = {
       provider,
       model,
       tools,
+      approvalAuthority,
       temperature,
       maxTokens,
     } = args as {
@@ -99,6 +111,7 @@ export const createAgentTool: Tool = {
       provider?: string;
       model?: string;
       tools?: Record<string, { mode: string }>;
+      approvalAuthority?: unknown;
       temperature?: number;
       maxTokens?: number;
     };
@@ -155,6 +168,7 @@ export const createAgentTool: Tool = {
           ...(maxTokens !== undefined ? { maxTokens } : {}),
         },
         tools: resolvedTools,
+        ...(approvalAuthority !== undefined ? { approvalAuthority } : {}),
         createdBy: context.participant.id,
         createdAt: new Date().toISOString(),
       });
@@ -233,6 +247,12 @@ export const modifyAgentTool: Tool = {
           'New tool access configuration (replaces the existing one entirely). ' +
           'Keys are tool names (or "*"), values are objects with a "mode" field.',
       },
+      approvalAuthority: {
+        description:
+          'New approval delegation authority (replaces existing). ' +
+          'Use "*" for full authority, a record of participantId → ["tool1", "tool2"] for simple ' +
+          'allow-lists, or a rules map for scope-based control. Set to {} to remove all authority.',
+      },
       temperature: {
         type: 'number',
         description: 'New temperature setting (0-2).',
@@ -258,6 +278,7 @@ export const modifyAgentTool: Tool = {
       provider,
       model,
       tools,
+      approvalAuthority,
       temperature,
       maxTokens,
       maxIterations,
@@ -269,6 +290,7 @@ export const modifyAgentTool: Tool = {
       provider?: string;
       model?: string;
       tools?: Record<string, { mode: string }>;
+      approvalAuthority?: unknown;
       temperature?: number;
       maxTokens?: number;
       maxIterations?: number;
@@ -320,6 +342,7 @@ export const modifyAgentTool: Tool = {
         ...(description !== undefined ? { description } : {}),
         ...(systemPrompt !== undefined ? { systemPrompt } : {}),
         ...(tools !== undefined ? { tools } : {}),
+        ...(approvalAuthority !== undefined ? { approvalAuthority } : {}),
         model: updatedModel,
         runtimeConfig: updatedRuntimeConfig,
       });
@@ -337,6 +360,7 @@ export const modifyAgentTool: Tool = {
       if (temperature !== undefined) changes.push('temperature');
       if (maxTokens !== undefined) changes.push('maxTokens');
       if (maxIterations !== undefined) changes.push('maxIterations');
+      if (approvalAuthority !== undefined) changes.push('approvalAuthority');
 
       return {
         status: 'success',

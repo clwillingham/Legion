@@ -10,12 +10,6 @@
     "file_write": {
       "mode": "auto"
     },
-    "file_list": {
-      "mode": "auto"
-    },
-    "file_search": {
-      "mode": "auto"
-    },
     "communicate": {
       "mode": "auto"
     },

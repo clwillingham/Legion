@@ -17,6 +17,8 @@ import { collectiveTools } from '../tools/collective-tools.js';
 import { agentTools } from '../tools/agent-tools.js';
 import { fileTools } from '../tools/file-tools.js';
 import { processTools } from '../tools/process-tools.js';
+import { approvalTools } from '../tools/approval-tools.js';
+import { PendingApprovalRegistry } from '../authorization/PendingApprovalRegistry.js';
 
 /**
  * Workspace — the root context for a Legion project.
@@ -38,6 +40,12 @@ export class Workspace {
   readonly runtimeRegistry: RuntimeRegistry;
   readonly eventBus: EventBus;
 
+  /**
+   * Shared registry for paused agent conversations awaiting caller approval.
+   * One instance per Workspace, shared across all sessions and contexts.
+   */
+  readonly pendingApprovalRegistry: PendingApprovalRegistry;
+
   constructor(root: string) {
     this.root = resolve(root);
     this.config = new Config(this.root);
@@ -46,6 +54,7 @@ export class Workspace {
     this.toolRegistry = new ToolRegistry();
     this.runtimeRegistry = new RuntimeRegistry();
     this.eventBus = new EventBus();
+    this.pendingApprovalRegistry = new PendingApprovalRegistry();
   }
 
   /**
@@ -96,6 +105,7 @@ export class Workspace {
       ...agentTools,
       ...fileTools,
       ...processTools,
+      ...approvalTools,
     ];
 
     for (const tool of allTools) {

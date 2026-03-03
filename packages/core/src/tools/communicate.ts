@@ -7,12 +7,20 @@ import type { RuntimeContext } from '../runtime/ParticipantRuntime.js';
  * This is the primary inter-agent communication tool. When invoked,
  * it uses Session.send() to dispatch the message through the proper
  * Conversation and ParticipantRuntime pipeline.
+ *
+ * Phase 3.3 behaviour:
+ * - Passes the caller's participant ID as `callingParticipantId` in the downstream
+ *   RuntimeContext, so the target agent can check caller approval authority.
+ * - If the target conversation has pending approvals (paused from a previous call),
+ *   immediately returns the pending requests without sending a new message.
  */
 export const communicateTool: Tool = {
   name: 'communicate',
   description:
     'Send a message to another participant in the collective. ' +
-    'Use this to collaborate with other agents or ask the user a question.',
+    'Use this to collaborate with other agents or ask the user a question. ' +
+    'If the target agent needs your approval to run a tool, you will receive ' +
+    'pending approval requests. Resolve them with the approval_response tool.',
 
   parameters: {
     type: 'object',
@@ -53,14 +61,59 @@ export const communicateTool: Tool = {
       };
     }
 
+    // ── Re-call while paused: return pending requests, no new message ────────
+    //
+    // Compute the conversation key for a potential downstream conversation
+    // (callerId → targetId). If that conversation currently has pending
+    // approvals in the registry, return them without sending a new message.
+    const callerParticipantId = context.participant.id;
+    const conversationId =
+      `${callerParticipantId}__${participantId}`;
+
+    if (context.pendingApprovalRegistry.hasPending(conversationId)) {
+      const batch = context.pendingApprovalRegistry.get(conversationId)!;
+      return {
+        status: 'approval_required',
+        data: {
+          message:
+            `Conversation with "${participantId}" has pending approval requests. ` +
+            `Use the approval_response tool to resolve them.`,
+          conversationId: batch.conversationId,
+          requestingParticipantId: batch.requestingParticipantId,
+          requests: batch.requests,
+        },
+      };
+    }
+
     try {
       const result = await session.send(
-        context.participant.id,
+        callerParticipantId,
         participantId,
         message,
         undefined,
-        context,
+        {
+          ...context,
+          // Downstream agent will see this as the calling participant
+          callingParticipantId: callerParticipantId,
+          // communicationDepth is incremented by Session/Conversation
+          communicationDepth: context.communicationDepth + 1,
+        },
       );
+
+      // Surface pending approvals as a structured tool result
+      if (result.status === 'approval_required' && result.pendingApprovals) {
+        return {
+          status: 'approval_required',
+          data: {
+            message:
+              `Agent "${participantId}" needs your approval to run the following tools. ` +
+              `Use the approval_response tool to approve or reject each request.`,
+            conversationId: result.pendingApprovals.conversationId,
+            requestingParticipantId: participantId,
+            requests: result.pendingApprovals.requests,
+          },
+        };
+      }
 
       return {
         status: result.status === 'success' ? 'success' : 'error',

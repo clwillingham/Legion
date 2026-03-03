@@ -2,7 +2,7 @@ import { createInterface, type Interface } from 'node:readline';
 import chalk from 'chalk';
 import ora from 'ora';
 import type { Workspace } from '@legion-collective/core';
-import { Session, AuthEngine, AgentRuntime, MockRuntime, ProcessRegistry } from '@legion-collective/core';
+import { Session, AuthEngine, AgentRuntime, MockRuntime, ProcessRegistry, ApprovalLog } from '@legion-collective/core';
 import type { RuntimeContext } from '@legion-collective/core';
 import { REPLRuntime } from './REPLRuntime.js';
 import { registerEventHandlers } from './display.js';
@@ -39,7 +39,8 @@ export class REPL {
   ) {
     this.workspace = workspace;
     this.sessionName = options?.sessionName;
-    this.authEngine = new AuthEngine();
+    const approvalLog = new ApprovalLog(workspace.storage.scope('sessions'));
+    this.authEngine = new AuthEngine({ approvalLog });
     this.authEngine.setApprovalHandler(createCLIApprovalHandler());
   }
 
@@ -113,7 +114,7 @@ export class REPL {
 
     this.session = Session.create(
       sessionName,
-      this.workspace.storage.scope('sessions'),
+      this.workspace.storage,
       this.workspace.runtimeRegistry,
       this.workspace.collective,
       this.workspace.eventBus,
@@ -249,6 +250,9 @@ export class REPL {
         console.log('  /ps                      — List tracked processes');
         console.log('  /output <id> [lines]     — Show recent output from a process');
         console.log('  /kill <id>               — Stop a background process');
+        console.log();
+        console.log(chalk.dim('  Authorization'));
+        console.log('  /approvals [n]           — Show recent approval decisions (default 10)');
         console.log();
         break;
 
@@ -572,6 +576,40 @@ export class REPL {
         break;
       }
 
+      case 'approvals': {
+        if (!this.session) {
+          console.log(chalk.yellow('\n  No active session.'));
+          console.log();
+          break;
+        }
+        const count = args.length > 0 ? parseInt(args[0], 10) : 10;
+        const limit = isNaN(count) || count < 1 ? 10 : count;
+        const sessionStorage = this.workspace.storage.scope('sessions');
+        const log = new ApprovalLog(sessionStorage);
+        const records = await log.list(this.session.data.id, { limit });
+        if (records.length === 0) {
+          console.log(chalk.dim('\n  No approval records in this session yet.'));
+        } else {
+          console.log(chalk.bold(`\nApprovals (${records.length} shown):`));
+          for (const r of records) {
+            const time = new Date(r.requestedAt).toLocaleTimeString();
+            const decisionColor =
+              r.decision === 'approved' || r.decision === 'auto_approved'
+                ? chalk.green
+                : chalk.red;
+            const reason = r.reason ? chalk.dim(` — ${r.reason}`) : '';
+            const ms = chalk.dim(` (${r.durationMs}ms)`);
+            console.log(
+              `  ${chalk.dim(time)} ${decisionColor(r.decision.padEnd(14))} ` +
+              `${chalk.cyan(r.requestingParticipantId)} → ${chalk.cyan(r.toolName)}` +
+              `${reason}${ms}`,
+            );
+          }
+        }
+        console.log();
+        break;
+      }
+
       default:
         console.log(chalk.yellow(`Unknown command: /${command}`));
         console.log(chalk.dim('Type /help for available commands.'));
@@ -640,6 +678,7 @@ export class REPL {
       eventBus: this.workspace.eventBus,
       storage: this.workspace.storage,
       authEngine: this.authEngine,
+      pendingApprovalRegistry: this.workspace.pendingApprovalRegistry,
     };
   }
 }

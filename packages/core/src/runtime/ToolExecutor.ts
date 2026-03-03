@@ -48,6 +48,7 @@ export class ToolExecutor {
       toolCall.tool,
       toolCall.args as Record<string, unknown>,
       participant.tools,
+      this.context.session.data.id,
     );
 
     if (authResult.authorized) {

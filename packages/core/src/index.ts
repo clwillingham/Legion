@@ -8,7 +8,6 @@ export type {
   MockConfig,
   AnyParticipantConfig,
   MockResponse,
-  ToolPolicy,
   MediumConfig,
 } from './collective/Participant.js';
 export {
@@ -70,8 +69,13 @@ export {
   listConversationsTool,
   inspectSessionTool,
   searchHistoryTool,
+  listApprovalsTool,
   collectiveTools,
 } from './tools/collective-tools.js';
+export {
+  approvalResponseTool,
+  approvalTools,
+} from './tools/approval-tools.js';
 export {
   createAgentTool,
   modifyAgentTool,
@@ -193,13 +197,42 @@ export {
 // --- Authorization ---
 export type { ApprovalRequest, ApprovalStatus } from './authorization/ApprovalRequest.js';
 export { createApprovalRequest } from './authorization/ApprovalRequest.js';
+export type { ApprovalDecision, ApprovalRecord, ApprovalListFilter } from './authorization/ApprovalLog.js';
+export { ApprovalLog, createApprovalRecordId, ApprovalRecordSchema } from './authorization/ApprovalLog.js';
 export type { ApprovalHandler } from './authorization/AuthEngine.js';
 export { AuthEngine } from './authorization/AuthEngine.js';
-export type { AuthorizationPolicy } from './authorization/policies.js';
+export type {
+  AuthorizationPolicy,
+  ScopeCondition,
+  AuthRule,
+  ToolPolicy,
+} from './authorization/policies.js';
 export {
+  ScopeConditionSchema,
+  AuthRuleSchema,
+  ToolPolicySchema,
+  evaluateScope,
+  evaluateRules,
+  evaluatePolicy,
   resolvePolicy,
   DEFAULT_TOOL_POLICIES,
 } from './authorization/policies.js';
+export type {
+  ApprovalPermission,
+  ApprovalAuthorityEntry,
+  ApprovalAuthority,
+} from './authorization/authority.js';
+export {
+  ApprovalPermissionSchema,
+  ApprovalAuthorityEntrySchema,
+  ApprovalAuthoritySchema,
+  hasAuthority,
+} from './authorization/authority.js';
+export type {
+  PendingApprovalRequest,
+  PendingApprovalBatch,
+} from './authorization/PendingApprovalRegistry.js';
+export { PendingApprovalRegistry } from './authorization/PendingApprovalRegistry.js';
 
 // --- Process Management ---
 export { OutputBuffer } from './process/OutputBuffer.js';

@@ -1,7 +1,0 @@
-{
-  "providers": {
-    "anthropic": {
-      "provider": "anthropic"
-    }
-  }
-}

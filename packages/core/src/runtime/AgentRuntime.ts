@@ -1,11 +1,13 @@
 import { ParticipantRuntime, RuntimeContext, RuntimeResult } from './ParticipantRuntime.js';
-import { RuntimeConfig } from './RuntimeConfig.js';
+import { RuntimeConfig, type ResolvedRuntimeConfig } from './RuntimeConfig.js';
 import { ToolExecutor } from './ToolExecutor.js';
 import type { AgentConfig } from '../collective/Participant.js';
 import type { Tool, ToolCallResult } from '../tools/Tool.js';
 import type { ToolDefinition, LLMProvider } from '../providers/Provider.js';
 import { createProvider } from '../providers/ProviderFactory.js';
 import { createMessage, type Message } from '../communication/Message.js';
+import { hasAuthority } from '../authorization/authority.js';
+import type { PendingApprovalRequest } from '../authorization/PendingApprovalRegistry.js';
 
 /**
  * AgentRuntime — the agentic loop for AI participants.
@@ -13,10 +15,18 @@ import { createMessage, type Message } from '../communication/Message.js';
  * Implements handleMessage() by:
  * 1. Resolving available tools from the ToolRegistry based on the agent's tool policy
  * 2. Creating an LLM provider from the agent's model config
- * 3. Running the loop: LLM call → tool execution → feed results → repeat
+ * 3. Running a loop: LLM call → tool execution → feed results → repeat
  * 4. Returning when the LLM produces a text response (no tool calls)
  *
  * The loop is bounded by maxIterations to prevent runaway execution.
+ *
+ * Approval Authority Delegation (Phase 3.3):
+ * When a tool call requires approval and the calling participant has authority
+ * (per their `approvalAuthority` config), the tool call is held as "pending"
+ * instead of immediately invoking the ApprovalHandler. All pending calls from
+ * a single iteration are batched into one `approval_required` result. The calling
+ * participant then resolves them via the `approval_response` tool, which invokes
+ * the stored `resume()` continuation to execute the held tools and continue the loop.
  */
 export class AgentRuntime extends ParticipantRuntime {
   async handleMessage(_message: string, context: RuntimeContext): Promise<RuntimeResult> {
@@ -39,16 +49,42 @@ export class AgentRuntime extends ParticipantRuntime {
       };
     }
 
-    // Build the message history from the conversation
+    // Build the message history from the conversation.
     // The conversation already has the user message appended by Conversation.send(),
     // so we use the full conversation history.
-    const conversationMessages = context.conversation.getMessages();
+    const workingMessages: Message[] = [...context.conversation.getMessages()];
 
-    // We'll maintain a working copy of messages that includes tool results
-    // from within this agentic loop iteration (not yet persisted to conversation).
-    const workingMessages: Message[] = [...conversationMessages];
+    return this.runLoop(
+      workingMessages,
+      0,
+      context,
+      agentConfig,
+      runtimeConfig,
+      provider,
+      toolDefinitions,
+    );
+  }
 
-    let iterations = 0;
+  /**
+   * Run the agentic loop from a given starting state.
+   *
+   * Extracted so that the `resume` continuation stored in PendingApprovalRegistry
+   * can re-enter the loop after pending approvals are resolved.
+   *
+   * @param workingMessages     Current message history (includes tool results injected so far)
+   * @param startedIterations   Number of iterations already consumed before this call
+   */
+  async runLoop(
+    workingMessages: Message[],
+    startedIterations: number,
+    context: RuntimeContext,
+    agentConfig: AgentConfig,
+    runtimeConfig: ResolvedRuntimeConfig,
+    provider: LLMProvider,
+    toolDefinitions: ToolDefinition[],
+  ): Promise<RuntimeResult> {
+    const toolExecutor = new ToolExecutor(context, context.authEngine);
+    let iterations = startedIterations;
 
     while (iterations < runtimeConfig.maxIterations) {
       iterations++;
@@ -81,9 +117,8 @@ export class AgentRuntime extends ParticipantRuntime {
           };
         }
 
-        // The response has tool calls — execute them and feed results back
-
-        // First, append the assistant message with tool calls to working history
+        // The response has tool calls — execute them and feed results back.
+        // First, append the assistant message with tool calls to working history.
         const assistantMessage = createMessage(
           'assistant',
           agentConfig.id,
@@ -96,18 +131,71 @@ export class AgentRuntime extends ParticipantRuntime {
         );
         workingMessages.push(assistantMessage);
 
-        // Execute each tool call
-        const toolExecutor = new ToolExecutor(context, context.authEngine);
-        const toolResults: ToolCallResult[] = [];
+        // ── Categorise tool calls ─────────────────────────────────────────────
+        // Map from toolCallId → result (filled as we go, preserving LLM order)
+        const resultMap = new Map<string, ToolCallResult>();
+
+        // Tool calls that need caller approval (held for this iteration)
+        const heldCalls: Array<{
+          toolCallId: string;
+          toolName: string;
+          toolArguments: Record<string, unknown>;
+          requestId: string;
+        }> = [];
+
+        // Determine the calling participant's config once for this iteration
+        const callerConfig = context.callingParticipantId
+          ? context.session.collective.get(context.callingParticipantId)
+          : undefined;
 
         for (const toolCall of response.toolCalls) {
-          // Emit tool call event
+          const toolArgs = toolCall.arguments as Record<string, unknown>;
+
+          // Check if this tool should be held for caller approval
+          if (callerConfig) {
+            const effectivePolicy = context.authEngine.getEffectivePolicy(
+              toolCall.name,
+              toolArgs,
+              agentConfig.tools,
+            );
+
+            if (
+              effectivePolicy === 'requires_approval' &&
+              hasAuthority(
+                callerConfig.approvalAuthority,
+                agentConfig.id,
+                toolCall.name,
+                toolArgs,
+              )
+            ) {
+              // Hold this tool call — the caller will decide
+              heldCalls.push({
+                toolCallId: toolCall.id,
+                toolName: toolCall.name,
+                toolArguments: toolArgs,
+                requestId: `approval_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              });
+
+              context.eventBus.emit({
+                type: 'tool:call',
+                sessionId: context.session.data.id,
+                participantId: agentConfig.id,
+                toolName: toolCall.name,
+                arguments: toolArgs,
+                timestamp: new Date(),
+              });
+
+              continue; // Skip immediate execution
+            }
+          }
+
+          // ── Execute tool immediately ─────────────────────────────────────
           context.eventBus.emit({
             type: 'tool:call',
             sessionId: context.session.data.id,
             participantId: agentConfig.id,
             toolName: toolCall.name,
-            arguments: toolCall.arguments,
+            arguments: toolArgs,
             timestamp: new Date(),
           });
 
@@ -116,8 +204,14 @@ export class AgentRuntime extends ParticipantRuntime {
             agentConfig,
           );
 
-          // Handle approval_required — pause the loop and bubble up
-          if (result.status === 'approval_required') {
+          // Handle approval_required from ToolExecutor (single-approver / escalation
+          // path — reached when there is no callerConfig or caller lacks authority).
+          // Only early-exit when there is a scalar approvalRequest (the legacy
+          // single-user-approval path). When result.data is present the tool is
+          // returning a delegation approval_required payload (e.g. communicate)
+          // which must be serialised as a normal tool result so the LLM can read
+          // the pending requests and call approval_response.
+          if (result.status === 'approval_required' && result.approvalRequest) {
             return {
               status: 'approval_required',
               response: response.content || undefined,
@@ -125,21 +219,19 @@ export class AgentRuntime extends ParticipantRuntime {
             };
           }
 
-          // Convert to ToolCallResult for the message history
-          const resultContent = result.status === 'success'
-            ? (typeof result.data === 'string' ? result.data : JSON.stringify(result.data))
-            : `Error: ${result.error}`;
+          const resultContent =
+            result.status === 'success' || result.status === 'approval_required'
+              ? (typeof result.data === 'string' ? result.data : JSON.stringify(result.data))
+              : `Error: ${result.error}`;
 
-          const toolCallResult: ToolCallResult = {
+          resultMap.set(toolCall.id, {
             toolCallId: toolCall.id,
             tool: toolCall.name,
-            status: result.status === 'success' ? 'success' : 'error',
+            // Treat delegation approval_required as success so the LLM receives the data.
+            status: result.status === 'error' ? 'error' : 'success',
             result: resultContent,
-          };
+          });
 
-          toolResults.push(toolCallResult);
-
-          // Emit tool result event
           context.eventBus.emit({
             type: 'tool:result',
             sessionId: context.session.data.id,
@@ -153,14 +245,159 @@ export class AgentRuntime extends ParticipantRuntime {
           });
         }
 
-        // Append a user message with tool results to working history
-        // (tool results are fed back as the "user" role for the next LLM turn)
+        // ── Batch pending approvals ──────────────────────────────────────────
+        if (heldCalls.length > 0) {
+          const conv = context.conversation;
+          const conversationId =
+            `${conv.data.initiatorId}__${conv.data.targetId}` +
+            (conv.data.name ? `__${conv.data.name}` : '');
+
+          const pendingRequests: PendingApprovalRequest[] = heldCalls.map((h) => ({
+            requestId: h.requestId,
+            toolCallId: h.toolCallId,
+            toolName: h.toolName,
+            toolArguments: h.toolArguments,
+          }));
+
+          // Capture current loop state for the resume continuation
+          const capturedWorkingMessages = workingMessages;
+          const capturedIterations = iterations;
+          const capturedResultMap = resultMap;
+          const capturedHeldCalls = heldCalls;
+          const capturedToolCalls = response.toolCalls;
+
+          // eslint-disable-next-line @typescript-eslint/no-this-alias
+          const self = this;
+
+          const resume = async (
+            decisions: Map<string, { approved: boolean; reason?: string }>,
+          ): Promise<RuntimeResult> => {
+            // Execute each held tool per caller decision
+            for (const held of capturedHeldCalls) {
+              const decision = decisions.get(held.requestId);
+              let callResult: ToolCallResult;
+
+              if (decision?.approved !== false) {
+                // Approved (or no explicit decision — default to approved).
+                // Execute the tool directly, bypassing ToolExecutor/AuthEngine re-authorization:
+                // the caller's decision IS the authorization grant.
+                const tool = context.toolRegistry.get(held.toolName);
+                const toolExecResult = tool
+                  ? await tool.execute(held.toolArguments, context)
+                  : { status: 'error' as const, error: `Unknown tool: ${held.toolName}` };
+
+                const resultContent =
+                  toolExecResult.status === 'success'
+                    ? (typeof toolExecResult.data === 'string' ? toolExecResult.data : JSON.stringify(toolExecResult.data))
+                    : `Error: ${toolExecResult.error}`;
+
+                callResult = {
+                  toolCallId: held.toolCallId,
+                  tool: held.toolName,
+                  status: toolExecResult.status === 'success' ? 'success' : 'error',
+                  result: resultContent,
+                };
+
+                context.eventBus.emit({
+                  type: 'tool:result',
+                  sessionId: context.session.data.id,
+                  participantId: agentConfig.id,
+                  toolName: held.toolName,
+                  result: {
+                    success: toolExecResult.status === 'success',
+                    output: resultContent,
+                  },
+                  timestamp: new Date(),
+                });
+              } else {
+                // Rejected
+                const reason =
+                  decision.reason ??
+                  `Tool "${held.toolName}" was rejected by ${context.callingParticipantId}.`;
+                callResult = {
+                  toolCallId: held.toolCallId,
+                  tool: held.toolName,
+                  status: 'error',
+                  result: `Rejected: ${reason}`,
+                };
+              }
+
+              capturedResultMap.set(held.toolCallId, callResult);
+            }
+
+            // Reconstruct tool results in original LLM tool-call order
+            const orderedResults: ToolCallResult[] = capturedToolCalls.map((tc) => {
+              const r = capturedResultMap.get(tc.id);
+              return (
+                r ?? {
+                  toolCallId: tc.id,
+                  tool: tc.name,
+                  status: 'error' as const,
+                  result: `Error: no result recorded for tool call ${tc.id}`,
+                }
+              );
+            });
+
+            const toolResultMessage = createMessage(
+              'user',
+              agentConfig.id,
+              '',
+              undefined,
+              orderedResults,
+            );
+            capturedWorkingMessages.push(toolResultMessage);
+
+            // Clear this batch from the registry and continue the loop
+            context.pendingApprovalRegistry.clear(conversationId);
+
+            return self.runLoop(
+              capturedWorkingMessages,
+              capturedIterations,
+              context,
+              agentConfig,
+              runtimeConfig,
+              provider,
+              toolDefinitions,
+            );
+          };
+
+          context.pendingApprovalRegistry.store(conversationId, {
+            conversationId,
+            requestingParticipantId: agentConfig.id,
+            callingParticipantId: context.callingParticipantId!,
+            requests: pendingRequests,
+            resume,
+          });
+
+          return {
+            status: 'approval_required',
+            response: response.content || undefined,
+            pendingApprovals: {
+              conversationId,
+              requests: pendingRequests,
+            },
+          };
+        }
+
+        // ── No pending approvals — reconstruct ordered results and continue ──
+        const allToolResults: ToolCallResult[] = response.toolCalls.map((tc) => {
+          const r = resultMap.get(tc.id);
+          return (
+            r ?? {
+              toolCallId: tc.id,
+              tool: tc.name,
+              status: 'error' as const,
+              result: `Error: no result recorded for tool call ${tc.id}`,
+            }
+          );
+        });
+
         const toolResultMessage = createMessage(
           'user',
           agentConfig.id,
           '',
           undefined,
-          toolResults,
+          allToolResults,
         );
         workingMessages.push(toolResultMessage);
 
@@ -213,8 +450,11 @@ export class AgentRuntime extends ParticipantRuntime {
 
   /**
    * Create an LLM provider from the agent's model config and resolved API key.
+   *
+   * Protected so test subclasses can inject a mock provider without hitting
+   * real API keys or network calls.
    */
-  private createProvider(agentConfig: AgentConfig, context: RuntimeContext): LLMProvider {
+  protected createProvider(agentConfig: AgentConfig, context: RuntimeContext): LLMProvider {
     const apiKey = context.config.resolveApiKey(agentConfig.model.provider);
 
     if (!apiKey) {
@@ -232,3 +472,4 @@ export class AgentRuntime extends ParticipantRuntime {
     });
   }
 }
+

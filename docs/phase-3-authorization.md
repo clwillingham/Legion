@@ -1,6 +1,7 @@
 # Phase 3: Authorization & Approval — Design & Implementation Plan
 
 **Created: March 2, 2026**
+**Updated: March 4, 2026**
 **Prerequisite: Phase 2 complete (all milestones 2.1–2.4)**
 
 ---
@@ -9,11 +10,11 @@
 
 Phase 3 transforms Legion's authorization from a flat "auto / requires_approval / deny" system into a granular, delegated, and auditable system. The three milestones are ordered by practical value:
 
-| Milestone | Scope | Priority |
-|---|---|---|
-| **3.1 Granular Scoping** | Tool policies evaluate args (paths, targets, commands) to decide mode | Highest — immediate daily value |
-| **3.2 Approval Logging** | Persist every approval decision for auditability | High — complements scoping |
-| **3.3 Approval Authority Delegation** | Calling participants approve/reject tool calls for downstream agents | Medium — needed for sophisticated multi-agent workflows |
+| Milestone | Scope | Priority | Status |
+|---|---|---|---|
+| **3.1 Granular Scoping** | Tool policies evaluate args (paths, targets, commands) to decide mode | Highest — immediate daily value | ✅ Complete |
+| **3.2 Approval Logging** | Persist every approval decision for auditability | High — complements scoping | ✅ Complete |
+| **3.3 Approval Authority Delegation** | Calling participants approve/reject tool calls for downstream agents | Medium — needed for sophisticated multi-agent workflows | ✅ Complete |
 
 ---
 
@@ -359,32 +360,33 @@ The `communicate` tool call that Agent A used to talk to Agent B returns a speci
 
 #### Step 3: Calling agent responds
 
-The calling agent (or user) uses an `approve_request` / `reject_request` tool:
+The calling agent (or user) uses a single `approval_response` tool to resolve one or more pending requests in one call:
 
 ```typescript
-// approve_request tool
+// approval_response tool — resolves one or more pending approval requests
 {
-  name: 'approve_request',
+  name: 'approval_response',
   parameters: {
-    requestId: string,
-    reason?: string,
-  }
-}
-
-// reject_request tool
-{
-  name: 'reject_request',
-  parameters: {
-    requestId: string,
-    reason?: string,
+    responses: Array<{
+      requestId: string,
+      approved: boolean,
+      reason?: string,
+    }>
   }
 }
 ```
 
-Once resolved:
-- The downstream tool executes (or is rejected)
-- The paused conversation resumes
-- The `communicate` tool returns the conversation result (which may include another approval request if more tools need approval)
+Once called, `approval_response` does three things atomically:
+1. Applies each decision to the matching pending approval entry
+2. Executes the approved tools (and rejects the rejected ones) in the paused downstream conversation
+3. Resumes the downstream conversation's agentic loop and awaits the final result
+4. Returns that final result directly — the calling agent sees it as the outcome of the `approval_response` call
+
+This means Agent A makes **one tool call** (`approval_response`) and gets Agent B's final response back. It does not need to re-call `communicate`.
+
+#### Re-calling communicate while approvals are pending
+
+If Agent A calls `communicate` targeting Agent B again while B's conversation is still paused (pending approvals not yet resolved), `communicate` immediately returns the current set of pending approval requests again. No new message is sent; the call acts as a "what's pending?" query. This prevents orphaned conversations and makes the approval state inspectable.
 
 #### Step 4: Escalation (natural, via maxDepth)
 
@@ -392,7 +394,22 @@ If the calling participant doesn't have `approvalAuthority` for the requested to
 
 Since conversations are bounded by `maxDepth`, the escalation naturally terminates. The user at the top of the chain always has `'*'` authority and can resolve any request. No explicit cycle detection is needed.
 
-### `approvalAuthority` Semantics (updated)
+### Batching Approval Requests
+
+If Agent B's LLM issues multiple tool calls in a single agentic iteration and more than one requires approval, **all of them are batched into a single `approval_required` result**. Agent A sees all pending requests at once and resolves them all in one `approval_response` call.
+
+Flow:
+1. Agent B's LLM returns N tool calls
+2. Tools that are `auto` or `deny` are executed/rejected immediately
+3. Tools that require caller approval are held as pending entries
+4. If any pending entries exist after processing the iteration, `communicate` returns `approval_required` containing all of them
+5. Agent A calls `approval_response` with decisions for each
+6. The held tool calls execute with their decisions applied
+7. All results (immediate + approved/rejected) are fed back to Agent B's LLM
+8. Agent B's conversation resumes
+
+This keeps the number of `communicate`/`approval_response` round-trips minimal.
+
 
 The `approvalAuthority` field uses the same **rules-list pattern** as tool policies. This allows scoped approval — e.g., UR Agent can approve `file_write` in `src/**` but must escalate `file_write` to `.env`.
 
@@ -496,28 +513,23 @@ Coding Agent calls file_write({ path: '.env' }) — requires_approval
 
 ### Implementation Steps
 
-1. **Add `callingParticipantId` to `RuntimeContext`** — tracks who initiated the current communication
-2. **Add `approve_request` and `reject_request` tools** — registered globally, usable by any participant with approval authority
-3. **Add `hasAuthority()` function** — evaluates `approvalAuthority` (supports `'*'`, simple arrays, and scoped rules)
-4. **Modify `ToolExecutor`** — when `requires_approval`, check calling participant's authority before falling back to `ApprovalHandler`
-5. **Add `PendingApproval` registry** — tracks pending approval requests waiting for resolution
-6. **Modify `Conversation.send()`** — support pausing mid-conversation for approval and resuming after
-7. **Modify `communicate` tool** — return `approval_required` status when downstream tool needs approval; natural escalation via `maxDepth`
-8. **Update `ApprovalAuthoritySchema`** — support scoped rules form alongside simple form
-9. **Tests** — caller approves, caller rejects, scoped authority, escalation to user, multi-level delegation
+1. **Update `ApprovalAuthoritySchema`** — support scoped rules form alongside simple form
+2. **Add `hasAuthority()` function** — evaluates `approvalAuthority` (supports `'*'`, simple arrays, and scoped rules)
+3. **Add `callingParticipantId` to `RuntimeContext`** — tracks who initiated the current communication
+4. **Add `PendingApprovalRegistry`** — tracks pending approval requests per conversation; stores held tool calls + deferred resolution
+5. **Modify `AgentRuntime` agentic loop** — after collecting tool call results for an iteration, check for held approvals; if any, pause and return `approval_required` with all pending requests batched
+6. **Add `approval_response` tool** — resolves one or more pending requests, executes held tools, resumes downstream conversation, returns final result (Option A)
+7. **Re-call `communicate` while paused** — if caller re-calls `communicate` while conversation has pending approvals, immediately return the pending request list without sending a new message
+8. **Escalation** — if caller lacks authority, the `approval_required` result propagates up via normal conversation return flow (no special mechanism)
+9. **Tests** — caller approves, caller rejects, batched approvals, scoped authority, escalation to user, multi-level delegation, re-call while pending
 
-### Open Questions for 3.3
+### Open Questions for 3.3 — Resolved
 
-These should be resolved during implementation:
+1. **Multiple pending approvals** — ✅ **Batch all pending requests** from a single agentic iteration into one `approval_required` result. Agent A resolves all with a single `approval_response` call containing per-request decisions.
 
-1. **Multiple pending approvals** — if Agent B makes 3 tool calls that all need approval, does Agent A see them one at a time (conversation pauses after each) or batched?
-   - **Recommended**: One at a time. The conversation pauses after the first `requires_approval` tool call, resumes after resolution. If the next iteration also hits `requires_approval`, it pauses again. This is simpler and matches how the agentic loop already works (it processes tool calls sequentially per iteration, but LLMs can request parallel tool calls).
+2. **Approval timeout** — ✅ **No timeouts**. Conversations stay paused indefinitely until approvals are addressed. Add timeouts in a future phase if needed.
 
-2. **Approval timeout** — should approval requests expire?
-   - **Recommended**: Not initially. The conversation just stays paused. Add timeouts in a future phase if needed.
-
-3. **Partial authority** — Agent A has authority over `file_read` but not `file_write` for Agent B. Agent B calls `file_write`. Does Agent A see the request (and must escalate) or does it bypass Agent A entirely?
-   - **Recommended**: Agent A sees it. Since it lacks authority, the `approval_required` result propagates up through the normal conversation return. Agent A doesn't need to explicitly "escalate" — it just returns the result, and its caller handles it (or returns it further up). The `maxDepth` limit ensures natural termination.
+3. **Partial authority** — ✅ **Caller always sees the request**. If the caller lacks authority for a tool, the `approval_required` result propagates up through the normal conversation return. No special escalation mechanism — the LLM at each level just returns the result upward. `maxDepth` ensures natural termination.
 
 ---
 
@@ -577,39 +589,39 @@ Add workspace-level authorization config:
 ## Implementation Order
 
 ```
-3.1  Granular Scoping
+3.1  Granular Scoping  ✅ COMPLETE (285 tests passing)
 │
-├── 1. ScopeConditionSchema + deny mode in ToolPolicySchema
-├── 2. evaluateScope() function
-├── 3. Path matching utility (picomatch)
-├── 4. Update resolvePolicy() with args + scope evaluation
-├── 5. Update AuthEngine.authorize() to pass args
-├── 6. Arg matching (exact + regex)
-├── 7. Multi-path tool handling (file_move)
-├── 8. Update built-in defaults with sensible scopes
-├── 9. Tests
+├── ✅ 1. ScopeConditionSchema + deny mode in ToolPolicySchema
+├── ✅ 2. evaluateScope() function
+├── ✅ 3. Path matching utility (picomatch)
+├── ✅ 4. Update resolvePolicy() with args + scope evaluation
+├── ✅ 5. Update AuthEngine.authorize() to pass args
+├── ✅ 6. Arg matching (exact + regex)
+├── ✅ 7. Multi-path tool handling (file_move: source + destination both checked)
+├── ✅ 8. Update built-in defaults (expanded DEFAULT_TOOL_POLICIES)
+├── ✅ 9. Tests (38 new tests: evaluateScope, evaluateRules, evaluatePolicy, resolvePolicy)
 │
-3.2  Approval Logging
+3.2  Approval Logging  ✅ COMPLETE (307 tests passing)
 │
-├── 1. ApprovalRecordSchema + ApprovalLog class
-├── 2. Storage scoping for approvals/
-├── 3. Wire ApprovalLog into AuthEngine (all decisions)
-├── 4. Auto-approve and deny logging
-├── 5. /approvals REPL command
-├── 6. list_approvals collective tool
-├── 7. Tests
+├── ✅ 1. ApprovalRecordSchema + ApprovalLog class (ApprovalLog.ts)
+├── ✅ 2. Storage scoping for approvals/ (sessions/<id>/approvals/<id>.json)
+├── ✅ 3. Wire ApprovalLog into AuthEngine (all decision paths)
+├── ✅ 4. Auto-approve and deny logging (decidedBy: 'system')
+├── ✅ 5. /approvals REPL command (REPL.ts)
+├── ✅ 6. list_approvals collective tool (collective-tools.ts)
+└── ✅ 7. Tests (22 new tests: record, list+filters, AuthEngine integration)
 │
-3.3  Approval Authority Delegation
+3.3  Approval Authority Delegation  ✅ COMPLETE
 │
-├── 1. Update ApprovalAuthoritySchema (scoped rules form)
-├── 2. hasAuthority() function (evaluate all schema forms)
-├── 3. callingParticipantId in RuntimeContext
-├── 4. approve_request + reject_request tools
-├── 5. PendingApproval registry
-├── 6. ToolExecutor delegation logic
-├── 7. Conversation pause/resume for approval
-├── 8. communicate tool approval_required handling
-├── 9. Tests
+├── ✅ 1. Update ApprovalAuthoritySchema (scoped rules form + simple array backward-compat)
+├── ✅ 2. hasAuthority() function (evaluate all schema forms)
+├── ✅ 3. callingParticipantId in RuntimeContext
+├── ✅ 4. PendingApprovalRegistry
+├── ✅ 5. AgentRuntime batching logic (runLoop() public for test re-entry)
+├── ✅ 6. approval_response tool (Option A — resolves + resumes + returns result)
+├── ✅ 7. Re-call communicate while paused → return pending requests
+├── ✅ 8. Escalation via natural conversation return flow
+└── ✅ 9. Tests (41 new tests: 21 authority.test.ts + 20 approval-delegation.test.ts)
 ```
 
 ---
@@ -630,14 +642,17 @@ Add workspace-level authorization config:
 - Edge cases: concurrent writes, empty session
 
 ### Milestone 3.3 Tests
-- Caller with blanket authority (`'*'`) → approve/reject inline (MockRuntime)
-- Caller with simple array authority → approve matching tool, escalate non-matching
-- Caller with scoped rules authority → approve within scope, escalate outside scope
-- Caller without authority → natural escalation to user via conversation return
-- Multi-level: User → A → B → C, C needs approval, escalates through B to A
-- `approve_request` / `reject_request` tools — valid requests, invalid request IDs, unauthorized caller
-- Conversation pause/resume — messages are held, then continue after resolution
 - `hasAuthority()` — all schema forms: `'*'`, simple arrays, scoped rules, `true` shorthand
+- Caller with blanket authority (`'*'`) → approves inline via `approval_response`
+- Caller with simple array authority → approves matching tools, escalates non-matching
+- Caller with scoped rules authority → approves within scope, escalates outside scope
+- Caller without authority → natural escalation to user via conversation return
+- Batched approvals — single iteration with 3 tool calls needing approval, all surfaced together, resolved in one `approval_response`
+- Mixed iteration — some tools auto, some need approval, all results batched correctly
+- Multi-level: User → A → B → C, C needs approval, escalates through B to A
+- `approval_response` — valid requests, partial approval (approve some, reject some), invalid request IDs
+- Re-call `communicate` while paused → returns pending requests, no new message sent
+- Conversation pause/resume — messages held, then continue after resolution
 
 ---
 
@@ -647,6 +662,6 @@ Add workspace-level authorization config:
 |---|---|---|---|
 | **3.1** | Medium | Low | Mostly new functions + updated signatures; existing tests validate no regression |
 | **3.2** | Low | Low | Straightforward file I/O; mirrors existing Storage patterns |
-| **3.3** | High | Medium | Requires modifying the conversation/communication flow; async pause/resume adds complexity; must not break existing approval behavior. No explicit cycle detection needed — `maxDepth` provides natural termination |
+| **3.3** | High | Medium | Requires modifying the AgentRuntime agentic loop and conversation flow; async pause/resume via PendingApprovalRegistry; Option A (approval_response resumes inline) avoids the caller needing to re-call communicate. No explicit cycle detection needed — `maxDepth` provides natural termination |
 
 **Recommendation**: Implement 3.1 and 3.2 together (they're complementary and low-risk). Implement 3.3 separately with careful attention to the conversation pause/resume mechanism.

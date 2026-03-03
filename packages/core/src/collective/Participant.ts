@@ -1,15 +1,15 @@
 import { z } from 'zod';
+import {
+  ToolPolicySchema,
+  type ToolPolicy,
+} from '../authorization/policies.js';
+import {
+  ApprovalAuthoritySchema,
+  type ApprovalAuthority,
+} from '../authorization/authority.js';
 
-// ============================================================
-// Tool Policy — per-tool authorization configuration
-// ============================================================
-
-export const ToolPolicySchema = z.object({
-  mode: z.enum(['auto', 'requires_approval']),
-  scope: z.record(z.unknown()).optional(),
-});
-
-export type ToolPolicy = z.infer<typeof ToolPolicySchema>;
+export { ToolPolicySchema, type ToolPolicy };
+export { ApprovalAuthoritySchema, type ApprovalAuthority };
 
 // ============================================================
 // Medium Configuration — how to reach a user participant
@@ -43,7 +43,7 @@ export const ParticipantConfigSchema = z.object({
   name: z.string(),
   description: z.string(),
   tools: z.record(ToolPolicySchema).default({}),
-  approvalAuthority: z.union([z.record(z.array(z.string())), z.literal('*')]).default({}),
+  approvalAuthority: ApprovalAuthoritySchema.default({}),
   status: z.enum(['active', 'retired']).default('active'),
 });
 

@@ -3,6 +3,7 @@ import type { RuntimeContext } from '../runtime/ParticipantRuntime.js';
 import type { AgentConfig, UserConfig } from '../collective/Participant.js';
 import type { Message } from '../communication/Message.js';
 import { Session } from '../communication/Session.js';
+import { ApprovalLog } from '../authorization/ApprovalLog.js';
 
 /**
  * collective-tools — tools for querying the collective, sessions, conversations, and models.
@@ -645,6 +646,87 @@ export const searchHistoryTool: Tool = {
 };
 
 // ============================================================
+// list_approvals — query approval log for current session
+// ============================================================
+
+export const listApprovalsTool: Tool = {
+  name: 'list_approvals',
+  description:
+    'List approval decisions recorded in the current session. ' +
+    'Returns recent authorization decisions (auto-approved, approved, rejected, or denied) ' +
+    'for tool calls, with optional filtering by participant, tool, or decision type.',
+
+  parameters: {
+    type: 'object',
+    properties: {
+      participantId: {
+        type: 'string',
+        description: 'Optional: filter to decisions for a specific requesting participant.',
+      },
+      toolName: {
+        type: 'string',
+        description: 'Optional: filter to decisions for a specific tool.',
+      },
+      decision: {
+        type: 'string',
+        enum: ['auto_approved', 'approved', 'rejected', 'denied'],
+        description: 'Optional: filter by decision outcome.',
+      },
+      limit: {
+        type: 'number',
+        description: 'Maximum number of records to return (most recent first). Defaults to 20.',
+      },
+    },
+    required: [],
+  } as JSONSchema,
+
+  async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
+    const { participantId, toolName, decision, limit } = args as {
+      participantId?: string;
+      toolName?: string;
+      decision?: 'auto_approved' | 'approved' | 'rejected' | 'denied';
+      limit?: number;
+    };
+
+    const sessionId = context.session.data.id;
+    const sessionStorage = context.storage.scope('sessions');
+    const log = new ApprovalLog(sessionStorage);
+
+    const records = await log.list(sessionId, {
+      participantId,
+      toolName,
+      decision,
+      limit: limit ?? 20,
+    });
+
+    const summary = records.map((r) => ({
+      id: r.id,
+      participant: r.requestingParticipantId,
+      tool: r.toolName,
+      decision: r.decision,
+      policyMode: r.policyMode,
+      decidedBy: r.decidedByParticipantId,
+      reason: r.reason,
+      durationMs: r.durationMs,
+      requestedAt: r.requestedAt,
+    }));
+
+    return {
+      status: 'success',
+      data: JSON.stringify(
+        {
+          sessionId,
+          total: records.length,
+          records: summary,
+        },
+        null,
+        2,
+      ),
+    };
+  },
+};
+
+// ============================================================
 // All collective/exploration tools bundled for easy registration
 // ============================================================
 
@@ -655,4 +737,5 @@ export const collectiveTools: Tool[] = [
   listConversationsTool,
   inspectSessionTool,
   searchHistoryTool,
+  listApprovalsTool,
 ];

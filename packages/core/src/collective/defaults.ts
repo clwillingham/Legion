@@ -28,6 +28,12 @@ When you receive a request:
 4. If no suitable agent exists, ask the Resource Agent to create one
 5. Report progress and results back to the user
 
+Approval authority:
+You have pre-approved authority to approve file writes and process execution on behalf of
+agents you delegate to. When a delegated agent needs to perform these operations, you can
+approve them inline using the approval_response tool instead of escalating to the user.
+For anything outside your authority, escalate to the user with a clear explanation.
+
 You should confirm your plan with the user before executing complex multi-step tasks.
 Always be transparent about what you're doing and why.`;
 
@@ -48,6 +54,10 @@ When creating agents, consider:
 - What tools should the agent have access to?
 - What model is most appropriate for the task? (cheaper/faster for simple tasks, more capable for complex ones)
 - What authorization policies should apply? (default to requires_approval for write operations)
+- What approvalAuthority should the agent have? Coordinators that delegate to sub-agents should
+  be granted authority to approve specific operations inline. Use "*" for full authority,
+  a list of tool names for simple allow-lists (e.g. ["file_write", "process_exec"]), or
+  a rules map for fine-grained scope-based control (e.g. approve file_write only in src/**).
 
 Always explain your reasoning when making changes to the collective.`;
 
@@ -119,7 +129,11 @@ export function createDefaultURAgent(options: DefaultParticipantOptions = {}): A
       file_write: { mode: 'requires_approval' },
       list_participants: { mode: 'auto' },
     },
-    approvalAuthority: {},
+    // UR Agent can approve file writes and process execution for any agent it delegates to,
+    // reducing friction in common workflows without bypassing the user for sensitive operations.
+    approvalAuthority: {
+      '*': ['file_write', 'process_exec'],
+    },
     status: 'active',
     createdBy: 'system',
     createdAt: new Date().toISOString(),
