@@ -621,7 +621,17 @@ Add workspace-level authorization config:
 ├── ✅ 6. approval_response tool (Option A — resolves + resumes + returns result)
 ├── ✅ 7. Re-call communicate while paused → return pending requests
 ├── ✅ 8. Escalation via natural conversation return flow
-└── ✅ 9. Tests (41 new tests: 21 authority.test.ts + 20 approval-delegation.test.ts)
+├── ✅ 9. Tests (41 new tests: 21 authority.test.ts + 20 approval-delegation.test.ts)
+├── ✅ 10. Bug fix — AgentRuntime early-exit swallowed delegation result
+│          (guarded `approval_required` early-exit with `&& result.approvalRequest` so that
+│          communicate's delegation result is fed back to the LLM as a tool result)
+├── ✅ 11. Bug fix — resume() re-authorized approved tools via ToolExecutor, causing denial
+│          (resume() now calls tool.execute() directly, bypassing the auth re-check)
+├── ✅ 12. Bug fix — conversations saved to wrong path (.legion/sessions/sessions/…)
+│          (REPL was passing storage.scope('sessions') to Session.create(); Session already
+│          builds the sessions/ prefix internally, so workspace-level storage suffices)
+└── ✅ 13. E2E integration tests (approval-e2e.integration.test.ts — 4 scenarios against
+           real Session/Conversation/AgentRuntime pipeline with scripted LLM providers)
 ```
 
 ---
@@ -653,6 +663,26 @@ Add workspace-level authorization config:
 - `approval_response` — valid requests, partial approval (approve some, reject some), invalid request IDs
 - Re-call `communicate` while paused → returns pending requests, no new message sent
 - Conversation pause/resume — messages held, then continue after resolution
+
+### E2E Integration Tests (`approval-e2e.integration.test.ts`)
+
+Four scenarios exercising the real `Session → Conversation → AgentRuntime` pipeline using
+`TestAgentRuntime` (subclasses `AgentRuntime`, injects per-agent `ScriptedProvider`) — no mocks
+at the Session/Conversation/ToolExecutor level:
+
+- **Scenario A** — caller HAS authority: ur-agent delegates to coding-agent, coding-agent batches
+  `file_write`, approval_required surfaces back to ur-agent's LLM as a tool result, ur-agent
+  calls `approval_response` (requestId extracted dynamically from the tool result message),
+  coding-agent resumes and writes the file, overall result is `success`.
+- **Scenario B** — caller LACKS authority: no batch stored, `file_write` not executed,
+  registry stays empty.
+- **Scenario C** — direct plumbing: `communicateTool.execute()` then `approvalResponseTool.execute()`
+  called directly as ur-agent, verifying registry + resume pipeline independently of the
+  AgentRuntime calling loop.
+- **Scenario D** — re-call `communicate` while paused: second call returns the same pending
+  requests without sending a new message to the downstream agent.
+
+The E2E tests were the ones that caught the two AgentRuntime routing bugs (items 10–11 above).
 
 ---
 

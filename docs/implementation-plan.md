@@ -102,10 +102,17 @@ Legion/
 │   │   ├── package.json
 │   │   └── tsconfig.json
 │   │
-│   └── web/ (Phase 4)                 # @legion/web — Vue.js UI
+│   └── server/ (Phase 4)              # @legion-collective/server — HTTP + WS server
 │       ├── src/
+│       │   ├── index.ts               # createServer() factory, public API
+│       │   ├── server.ts              # Fastify setup, plugin registration
+│       │   ├── routes/                # REST API route handlers
+│       │   ├── websocket/             # WebSocket event bridge
 │       │   └── runtime/
 │       │       └── WebRuntime.ts      # ParticipantRuntime for browser users
+│       ├── web/                       # Vue 3 SPA (Vite + Tailwind CSS)
+│       │   ├── src/
+│       │   └── dist/                  # Built SPA served by Fastify as static files
 │       └── ...
 │
 ├── docs/
@@ -185,14 +192,18 @@ Legion uses a layered configuration system. Settings cascade from global → wor
 ```
 @legion-collective/cli
   ├── @legion-collective/core
+  ├── @legion-collective/server
   └── REPLRuntime (implements ParticipantRuntime from core)
 
-@legion/web (future)
+@legion-collective/server
   ├── @legion-collective/core
+  ├── fastify + @fastify/websocket + @fastify/static
   └── WebRuntime (implements ParticipantRuntime from core)
 ```
 
 `@legion-collective/core` is the engine with zero UI concerns. It defines the `ParticipantRuntime` contract and provides `AgentRuntime` and `MockRuntime`. UI packages provide their own runtime implementations for human participants (`REPLRuntime`, `WebRuntime`) and register them with the `RuntimeRegistry`. The core also exposes an event bus that UI layers subscribe to for real-time updates.
+
+The server package hosts a Fastify HTTP + WebSocket server. It depends on core for Session, EventBus, Collective, etc. — never on CLI. CLI depends on server to provide the `legion serve` command, which imports `createServer()` and starts the server. The server serves the built Vue SPA as static files via `@fastify/static`.
 
 ### Object Model
 
@@ -956,55 +967,149 @@ A user can:
 
 ---
 
-## 6. Phase 3: Authorization & Approval
+## 6. Phase 3: Authorization & Approval ✅
 
 **Goal**: Granular authorization with scoping and delegated approval authority.
 
-### Milestone 3.1: Granular Scoping
-- [ ] Path-based scoping for file tools (auto-approve reads in `src/`, require approval for `config/`)
-- [ ] Action-based scoping (create vs. delete)
-- [ ] Target-based scoping for communicate tool
-- [ ] Scope evaluation in `AuthEngine`
+> **Authoritative doc**: See `docs/phase-3-authorization.md` for the full design doc with detailed implementation notes, bug fixes, and E2E test coverage.
 
-### Milestone 3.2: Approval Authority Delegation
-- [ ] Agent-to-agent approval authority enforcement
-- [ ] Automatic approval by authorized intermediaries
-- [ ] Approval escalation chain (agent → agent → user)
-- [ ] Cycle detection to prevent circular escalation
+### Milestone 3.1: Granular Scoping ✅
+- [x] Path-based scoping for file tools (auto-approve reads in `src/`, require approval for `config/`)
+- [x] `ScopeEvaluator` class with `PathMatcher`, `ActionMatcher`, `TargetMatcher` strategies
+- [x] Action-based scoping (create vs. delete)
+- [x] Target-based scoping for communicate tool
+- [x] Scope evaluation in `AuthEngine` — integrates `ScopeEvaluator` into `authorize()` flow
+- [x] 62 unit tests for scope evaluation
 
-### Milestone 3.3: Approval Logging
-- [ ] Approval history per session
-- [ ] Who approved what, when, with what reason
-- [ ] Queryable approval log
+### Milestone 3.2: Approval Authority Delegation ✅
+- [x] Agent-to-agent approval authority enforcement
+- [x] `ApprovalChainResolver` — resolves escalation chain from participant configs
+- [x] Automatic approval by authorized intermediaries
+- [x] Approval escalation chain (agent → agent → user)
+- [x] Cycle detection to prevent circular escalation
+- [x] Batched approval for parallel tool calls in same LLM response
+- [x] `PendingApprovalRegistry` — stores pending approval requests for async resolution
+- [x] `approval_response` tool — allows agents to approve/reject batched requests
+- [x] 78 unit tests for approval chain, batching, and delegation
+
+### Milestone 3.3: Approval Logging ✅
+- [x] `ApprovalLog` class — append-only session-scoped log with persistence
+- [x] Approval history per session (persisted to `.legion/sessions/<id>/approval-log.json`)
+- [x] Who approved what, when, with what reason
+- [x] Queryable approval log (by tool, participant, status, time range)
+- [x] `query_approval_log` tool for agents
+- [x] 28 unit tests for approval logging
+
+### Additional Items (discovered during E2E testing)
+- [x] E2E integration tests — 4 scenarios using real Session/Conversation/Runtime pipeline
+- [x] Bug fix: `AgentRuntime` approval_required early-exit swallowed delegation results
+- [x] Bug fix: `resume()` re-authorized already-approved tools via ToolExecutor
+- [x] Bug fix: Conversations saved to wrong directory (double `sessions/` prefix)
+
+**Total**: 352 tests passing across 11 test files
 
 ---
 
 ## 7. Phase 4: Web Interface
 
-**Goal**: Vue.js SPA providing a rich visual experience alongside (not replacing) the REPL.
+**Goal**: Vue 3 SPA providing a rich visual experience alongside (not replacing) the REPL.
+
+### Architecture Decisions
+
+| Concern | Choice | Rationale |
+|---|---|---|
+| **Server** | Fastify | Fast, plugin-based, native WebSocket support, TypeScript-first |
+| **Package** | `packages/server` (`@legion-collective/server`) | Keeps core clean; server depends on core, CLI depends on server |
+| **Frontend** | Vue 3 + Vite + Tailwind CSS | Reactive, fast dev server, utility-first CSS |
+| **Component Library** | None (custom components) | Full control, no dependency bloat |
+| **Deployment** | Fastify serves built Vue app as static files | Single deployable, `legion serve` starts everything |
+| **Auth** | Single-user local-first (Phase 4), token auth in Phase 6 | Keep it simple initially; design for future multi-user |
+| **Real-time** | WebSocket (native Fastify WS plugin) | EventBus → WS bridge for live updates |
+
+### Dependency Graph
+
+```
+@legion-collective/cli
+  ├── @legion-collective/core
+  └── @legion-collective/server
+        └── @legion-collective/core
+
+@legion-collective/server
+  ├── @legion-collective/core
+  ├── fastify + @fastify/websocket + @fastify/static
+  └── packages/server/web/ (built Vue SPA served as static files)
+```
+
+The `legion serve` command in CLI imports `createServer()` from the server package:
+
+```typescript
+// packages/cli/src/commands/serve.ts
+import { createServer } from '@legion-collective/server';
+
+const server = createServer({ workspace, port });
+await server.start();
+```
+
+### WebRuntime & Agent-Initiated Messages
+
+The server registers `WebRuntime` as `user:web` in the `RuntimeRegistry`. When an agent calls `communicate` targeting the user:
+- `WebRuntime.handleMessage()` pushes the message to the browser via WebSocket
+- WebRuntime waits for the user's response via the same WS connection
+- If no browser is connected (no active WS client), WebRuntime returns an error result: `"User is not connected — no active web session"` — the agent receives this as a tool error and can adapt
+
+This is symmetric with `REPLRuntime` (blocks on terminal input) — the Conversation doesn't know which runtime it's talking to.
 
 ### Milestone 4.1: Server Layer
-- [ ] Express or Fastify HTTP server in `@legion-collective/core` or a new `@legion/server` package
-- [ ] WebSocket server for real-time event streaming
-- [ ] REST API for collective/session CRUD operations
-- [ ] Event bus → WebSocket bridge
+- [ ] `packages/server` package scaffolding (package.json, tsconfig, tsup config)
+- [ ] Fastify HTTP server with `createServer()` factory exported
+- [ ] `@fastify/websocket` integration for real-time streaming
+- [ ] EventBus → WebSocket bridge (subscribe to core events, broadcast to connected clients)
+- [ ] REST API: collective CRUD (`GET/POST/PUT /api/collective/participants`)
+- [ ] REST API: session management (`GET/POST /api/sessions`, `GET /api/sessions/:id/conversations`)
+- [ ] REST API: messages (`GET /api/conversations/:id/messages`, `POST /api/sessions/:id/send`)
+- [ ] REST API: approval actions (`POST /api/approvals/:id/respond`)
+- [ ] REST API: process management (`GET/POST /api/processes`)
+- [ ] `@fastify/static` serves built Vue app from `web/dist/`
+- [ ] `WebRuntime` — implements `ParticipantRuntime` for browser users
+- [ ] `WebRuntime` error handling — returns error if no WS client connected
+- [ ] `legion serve` CLI command (thin wrapper calling `createServer()`)
 
 ### Milestone 4.2: Vue.js Chat Panel
+- [ ] Vue 3 + Vite + Tailwind CSS project scaffolding in `packages/server/web/`
+- [ ] WebSocket client service (connect, reconnect, message handling)
 - [ ] Chat interface for user ↔ participant conversations
-- [ ] Message history display
+- [ ] Message history display with participant avatars/names
 - [ ] Inline approval requests (approve/reject buttons with reason field)
-- [ ] Agent activity indicators (spinner when agents are working)
+- [ ] Agent activity indicators (spinner/typing when agents are working)
 - [ ] Multi-conversation tabs (named sessions)
+- [ ] Tool call display (collapsible tool call/result blocks)
 
-### Milestone 4.3: Collective Viewer
-- [ ] Participant cards with config display
-- [ ] Live communication activity visualization
-- [ ] Session inspection (browse conversation histories)
+### Milestone 4.3: Collective Management UI
+- [ ] View collective participants with details (cards/list view)
+- [ ] Create/modify/retire agents with forms
+- [ ] View session and conversation history
+- [ ] Agent status indicators (active/retired)
 
 ### Milestone 4.4: Session Dashboard
 - [ ] Create/resume/manage sessions
 - [ ] Active conversation session list
 - [ ] Quick-start templates
+
+### Milestone 4.5: Process Management UI
+- [ ] Process list view with status and controls
+- [ ] Real-time output streaming view (via WebSocket)
+- [ ] Process control buttons (stop, restart)
+- ~~Input support for interactive processes~~ — deferred to Phase 6
+
+### Milestone 4.6: Workspace File Explorer
+- [ ] File tree view of workspace (uses `directory_list` tool)
+- [ ] File content viewer with syntax highlighting
+- [ ] File editing interface — saves go through `file_write` tool with full authorization flow (consistent with agent file operations; adds tracking and audit trail)
+
+### Milestone 4.7: Workspace Configuration Editor
+- [ ] View and edit workspace configuration (`.legion/config.json`) in a form UI
+- [ ] Schema-driven form generation from `ConfigSchema`
+- ~~Global configuration editor (API keys)~~ — deferred to Phase 6 with token auth + multi-user support
 
 ---
 
@@ -1034,7 +1139,10 @@ A user can:
 - Web browsing / research tools
 - User-defined custom tools (plugin system)
 - Import/export collective configurations
-- Multiple user support
+- **Multiple user support** — multi-user workspace access with user identity management
+- **Token authentication** — API token auth for server endpoints, required before exposing to network
+- **Global configuration editor** — edit global config (LLM providers, API keys) in web UI, gated behind token auth
+- **Interactive process input** — stdin support for background processes (deferred from Phase 4.5)
 - Non-AI participants (webhooks, bots)
 - Artifact generation
 
@@ -1128,19 +1236,19 @@ Decisions that can be deferred but should be tracked:
 
 ## Estimated Timeline
 
-| Phase | Scope | Estimated Duration |
+| Phase | Scope | Status |
 |---|---|---|
-| **Phase 1** | Core Engine MVP | 6–8 weeks |
-| **Phase 2** | Process Management & Extended Tools | 2–3 weeks (2.1–2.4 complete ✅) |
-| **Phase 3** | Authorization & Approval | 2–3 weeks |
-| **Phase 4** | Web Interface | 4–6 weeks |
-| **Phase 5** | Learning & Memory | 3–4 weeks |
-| **Phase 6** | Advanced Features | Ongoing |
+| **Phase 1** | Core Engine MVP | ✅ Complete |
+| **Phase 2** | Process Management & Extended Tools | ✅ Complete |
+| **Phase 3** | Authorization & Approval | ✅ Complete (352 tests) |
+| **Phase 4** | Web Interface (Fastify + Vue 3) | 🟡 Planning complete, implementation next |
+| **Phase 5** | Learning & Memory | Not started |
+| **Phase 6** | Advanced Features | Not started |
 
-Phase 1 is the largest because it establishes all foundational abstractions. Phases 2–3 build on those abstractions and move faster. Phase 4 is a new surface area (frontend) but the backend integration is already designed via the event system.
+Phases 1–3 are complete. Phase 4 introduces new surface area (HTTP server + Vue SPA) but the backend integration is already designed via the event system and RuntimeRegistry.
 
 ---
 
 ## Next Step
 
-Begin Phase 1, Milestone 1.1: Project scaffolding. Set up the monorepo, TypeScript, build tooling, and test infrastructure. Then move to the configuration system (1.2) and workspace management (1.3) — these are the foundations everything else builds on.
+Begin Phase 4, Milestone 4.1: Server Layer. Scaffold `packages/server`, set up Fastify with WebSocket support, implement the EventBus → WS bridge, and build REST API endpoints. Then add the `legion serve` CLI command.
