@@ -898,16 +898,30 @@ These would be natural additions to the REPL later:
 - The `close` event handler on readline is now `async` to support the async `killAll()` call.
 - `process:output` events are NOT displayed — they would flood the terminal. Can be enabled later via a verbosity flag or `/process watch <id>` command.
 
-### Milestone 2.6: Integration Tests
-- [ ] End-to-end test: `process_exec` runs a command and returns output
-- [ ] Test: `process_exec` with timeout kills the process
-- [ ] Test: `process_exec` with large output truncates correctly
-- [ ] Test: `process_start` + `process_status` + `process_stop` lifecycle
-- [ ] Test: Concurrency limit enforcement
-- [ ] Test: Blocklist rejection
-- [ ] Test: `cwd` workspace boundary enforcement
-- [ ] Test: Session cleanup kills all background processes
-- [ ] Test: Non-zero exit code returns `status: 'success'` with exit code
+### Milestone 2.6: Integration Tests ✅
+- [x] End-to-end test: `process_exec` runs a command and returns output
+- [x] Test: `process_exec` with timeout kills the process
+- [x] Test: `process_exec` with large output truncates correctly
+- [x] Test: `process_start` + `process_status` + `process_stop` lifecycle
+- [x] Test: Concurrency limit enforcement
+- [x] Test: Blocklist rejection
+- [x] Test: `cwd` workspace boundary enforcement
+- [x] Test: Session cleanup kills all background processes
+- [x] Test: Non-zero exit code returns `status: 'success'` with exit code
+
+**Implementation**: `packages/core/src/process/process-integration.test.ts` — 30 integration tests using real spawned processes (no mocking). Tests use safe commands (`echo`, `sleep`, `seq`, `exit`, `pwd`) and cover:
+- Basic execution: stdout, stderr, exit codes, duration tracking, registry registration
+- Timeout: process killed after timeout, `timeout: 0` disables
+- Output truncation: configurable `maxOutputSize` via context config
+- Working directory: default cwd, relative cwd, boundary enforcement
+- Blocklist: default and custom blocklist patterns
+- Full lifecycle: `process_start` → `process_status` → `process_stop`, background output capture, stop on already-exited process
+- `process_list`: filter by state, filter by mode
+- Concurrency limit: registry with `maxProcesses=2` rejects 3rd process
+- Session cleanup: `killAll()` stops all running background processes
+- Edge cases: empty/missing command, env variables, non-existent process IDs, mixed stdout+stderr with non-zero exit
+
+**Total test count**: 208 (28 OutputBuffer + 27 ProcessRegistry + 62 unit + 61 known-models + 30 integration)
 
 ---
 
@@ -988,8 +1002,8 @@ Use temp directories for any test that involves cwd validation.
 | 2.3 Query & control tools | 0.5 days |
 | 2.4 Config & event extensions | 0.5 days |
 | 2.5 Registration & CLI integration | 0.5 days |
-| 2.6 Integration tests | 1 day |
-| **Total** | **~4–5 days** |
+| 2.6 Integration tests | 1 day | ✅ |
+| **Total** | **~4–5 days** | **All complete** |
 
 ---
 

@@ -9,6 +9,8 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude='packages/*/src/**/*.integration.test.ts'",
+    "test:integration": "vitest run integration",
     "test:watch": "vitest",
     "lint": "eslint packages/*/src/**/*.ts",
     "lint:fix": "eslint packages/*/src/**/*.ts --fix",
