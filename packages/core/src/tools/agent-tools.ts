@@ -52,9 +52,10 @@ export const createAgentTool: Tool = {
       },
       provider: {
         type: 'string',
-        enum: ['anthropic', 'openai', 'openrouter'],
         description:
-          'LLM provider to use. Defaults to the workspace default provider.',
+          'LLM provider to use. Built-in options: "anthropic", "openai", "openrouter". ' +
+          'Custom compatible providers: any name configured in your workspace ' +
+          '(use list_providers to see available names). Defaults to the workspace default provider.',
       },
       model: {
         type: 'string',
@@ -139,13 +140,16 @@ export const createAgentTool: Tool = {
       (context.config.get('defaultProvider') as string | undefined) ??
       'anthropic';
 
-    const defaultModels: Record<string, string> = {
+    const builtinDefaultModels: Record<string, string> = {
       anthropic: 'claude-sonnet-4-6',
       openai: 'gpt-4o',
       openrouter: 'anthropic/claude-sonnet-4-6',
     };
 
-    const resolvedModel = model ?? defaultModels[resolvedProvider] ?? 'claude-sonnet-4-6';
+    // For custom providers, prefer the stored defaultModel over the built-in fallbacks.
+    const storedDefault = context.config.getProviderConfig(resolvedProvider)?.defaultModel;
+    const resolvedModel =
+      model ?? storedDefault ?? builtinDefaultModels[resolvedProvider] ?? 'gpt-4o';
 
     // Default tools: communicate + list_participants
     const resolvedTools = tools ?? {
@@ -234,8 +238,10 @@ export const modifyAgentTool: Tool = {
       },
       provider: {
         type: 'string',
-        enum: ['anthropic', 'openai', 'openrouter'],
-        description: 'New LLM provider.',
+        description:
+          'New LLM provider. Built-in options: "anthropic", "openai", "openrouter". ' +
+          'Custom compatible providers: any name configured in your workspace ' +
+          '(use list_providers to see available names).',
       },
       model: {
         type: 'string',
@@ -555,9 +561,10 @@ export const listModelsTool: Tool = {
     properties: {
       provider: {
         type: 'string',
-        enum: ['anthropic', 'openai', 'openrouter'],
         description:
-          'Filter to a single provider. Omit to query all configured providers.',
+          'Filter to a single provider. Built-in options: "anthropic", "openai", "openrouter". ' +
+          'Custom compatible providers: any name configured in your workspace ' +
+          '(use list_providers to see available names). Omit to query all configured providers.',
       },
       search: {
         type: 'string',
@@ -620,21 +627,31 @@ export const listModelsTool: Tool = {
 
     const config = context.config;
 
-    // Determine which providers to query
-    const standardProviders = ['anthropic', 'openai', 'openrouter'] as const;
+    // Determine which providers to query.
+    // Include all configured providers (workspace + global), plus the three built-ins
+    // if an API key is resolvable for them.
+    const configuredProviders = Object.keys(config.get('providers') ?? {});
+    const builtinProviders = ['anthropic', 'openai', 'openrouter'];
+    const allKnownProviders = [
+      ...new Set([...builtinProviders, ...configuredProviders]),
+    ];
+
     const providersToQuery = providerFilter
       ? [providerFilter]
-      : standardProviders.filter((name) => {
-          const providers = config.get('providers') ?? {};
-          return !!(providers[name]?.apiKey || config.resolveApiKey(name));
+      : allKnownProviders.filter((name) => {
+          const entry = config.getProviderConfig(name);
+          const adapterType = entry?.type ?? entry?.provider ?? (builtinProviders.includes(name) ? name : 'openai-compatible');
+          const isLocalCompatible = adapterType === 'openai-compatible';
+          // Include if an API key is available, or if it's a local-compatible provider
+          return !!(config.resolveApiKey(name) || isLocalCompatible);
         });
 
     if (providersToQuery.length === 0) {
       return {
         status: 'error',
         error:
-          'No configured providers found. Configure at least one provider with an API key ' +
-          '(anthropic, openai, or openrouter) to list models.',
+          'No configured providers found. Configure at least one provider ' +
+          '(anthropic, openai, openrouter, or a custom openai-compatible endpoint) to list models.',
       };
     }
 
@@ -644,19 +661,28 @@ export const listModelsTool: Tool = {
 
     for (const providerName of providersToQuery) {
       try {
+        const entry = config.getProviderConfig(providerName);
+        const builtins = ['anthropic', 'openai', 'openrouter'];
+        const adapterType =
+          entry?.type ??
+          entry?.provider ??
+          (builtins.includes(providerName) ? providerName : 'openai-compatible');
+        const isLocalCompatible = adapterType === 'openai-compatible';
+
         const apiKey = config.resolveApiKey(providerName);
-        if (!apiKey) {
+        if (!apiKey && !isLocalCompatible) {
           errors.push(`${providerName}: no API key configured`);
           continue;
         }
 
-        const providers = config.get('providers') ?? {};
-        const providerConf = providers[providerName];
         const providerConfig: ProviderConfig = {
-          provider: providerName as ProviderConfig['provider'],
-          apiKey,
-          baseUrl: providerConf?.baseUrl,
-          defaultModel: providerConf?.defaultModel,
+          type: adapterType,
+          name: providerName,
+          provider: adapterType,
+          apiKey: apiKey ?? 'local',
+          baseUrl: entry?.baseUrl,
+          defaultModel: entry?.defaultModel,
+          models: entry?.models,
         };
 
         const providerInstance = createProvider(providerConfig);
@@ -728,6 +754,59 @@ export const listModelsTool: Tool = {
 };
 
 // ============================================================
+// list_providers — enumerate all configured LLM providers
+// ============================================================
+
+export const listProvidersTool: Tool = {
+  name: 'list_providers',
+  description:
+    'List all LLM providers configured in this workspace. ' +
+    'Returns each provider\'s name, adapter type, base URL, default model, ' +
+    'and whether an API key is available. ' +
+    'Use this to discover valid provider names when creating or modifying agents.',
+
+  parameters: {
+    type: 'object',
+    properties: {},
+    required: [],
+  } as JSONSchema,
+
+  async execute(_args: unknown, context: RuntimeContext): Promise<ToolResult> {
+    const merged = context.config.getMerged();
+    const storedProviders = merged.providers ?? {};
+
+    // Start from all explicitly stored provider entries
+    const entries = Object.entries(storedProviders).map(([name, cfg]) => ({
+      name,
+      type: cfg.type ?? cfg.provider ?? 'openai-compatible',
+      baseUrl: cfg.baseUrl ?? (name === 'openrouter' ? 'https://openrouter.ai/api/v1' : undefined),
+      defaultModel: cfg.defaultModel,
+      hasApiKey: !!(context.config.resolveApiKey(name)),
+    }));
+
+    // Always surface the three built-in providers even if not explicitly configured,
+    // so agents know they exist and can check whether a key is available.
+    const builtins = ['anthropic', 'openai', 'openrouter'];
+    for (const name of builtins) {
+      if (!storedProviders[name]) {
+        entries.push({
+          name,
+          type: name,
+          baseUrl: name === 'openrouter' ? 'https://openrouter.ai/api/v1' : undefined,
+          defaultModel: undefined,
+          hasApiKey: !!(context.config.resolveApiKey(name)),
+        });
+      }
+    }
+
+    return {
+      status: 'success',
+      data: JSON.stringify({ providers: entries }, null, 2),
+    };
+  },
+};
+
+// ============================================================
 // All agent management tools bundled for easy registration
 // ============================================================
 
@@ -737,4 +816,5 @@ export const agentTools: Tool[] = [
   retireAgentTool,
   listToolsTool,
   listModelsTool,
+  listProvidersTool,
 ];

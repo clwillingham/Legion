@@ -173,17 +173,43 @@ export interface TokenUsage {
 
 /**
  * Configuration for an LLM provider.
+ *
+ * Used internally by the factory after resolution — `name` and `apiKey` are always
+ * present (placeholder 'local' if the server doesn't require authentication).
  */
 export interface ProviderConfig {
-  /** Provider type. */
-  provider: 'anthropic' | 'openai' | 'openrouter';
+  /**
+   * The SDK adapter to use.
+   * - 'anthropic'         — Anthropic SDK
+   * - 'openai'            — OpenAI SDK (official endpoints)
+   * - 'openrouter'        — OpenAI SDK + OpenRouter base URL / model listing
+   * - 'openai-compatible' — OpenAI SDK with a custom baseUrl (llama.cpp, vLLM, etc.)
+   *
+   * Falls back to `provider` for backward compatibility.
+   */
+  type?: string;
 
-  /** API key. */
+  /**
+   * Provider name (the record key, e.g. 'anthropic', 'llamacpp').
+   * Present after resolution by AgentRuntime / list_models tool.
+   */
+  name?: string;
+
+  /** Kept for backward compatibility — acts as `type` when `type` is absent. */
+  provider?: string;
+
+  /** API key. Required for cloud providers; 'local' placeholder for local servers. */
   apiKey: string;
 
-  /** Base URL override (used by OpenRouter, or custom endpoints). */
+  /** Base URL override (required for openai-compatible; used by openrouter too). */
   baseUrl?: string;
 
   /** Default model for this provider. */
   defaultModel?: string;
+
+  /**
+   * Static model list — fallback when /v1/models is unavailable or empty.
+   * Each entry may be a bare ID string or a fuller ModelInfo-shaped object.
+   */
+  models?: Array<string | { id: string; name?: string; description?: string; contextLength?: number }>;
 }

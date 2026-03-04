@@ -54,7 +54,12 @@ export type ParticipantConfig = z.infer<typeof ParticipantConfigSchema>;
 // ============================================================
 
 export const ModelConfigSchema = z.object({
-  provider: z.enum(['anthropic', 'openai', 'openrouter']),
+  /**
+   * Provider name. May be a built-in ('anthropic', 'openai', 'openrouter')
+   * or any name configured in providers config (e.g. 'llamacpp', 'lmstudio').
+   * Validated at runtime against the configured provider list.
+   */
+  provider: z.string(),
   model: z.string(),
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().positive().optional(),

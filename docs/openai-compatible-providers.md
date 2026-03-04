@@ -1,6 +1,6 @@
 # Proposal: OpenAI-Compatible Provider Support
 
-**Status:** Proposal  
+**Status:** Implemented  
 **Date:** March 2026
 
 ---

@@ -39,10 +39,18 @@ watch(name, (val) => {
 });
 
 // ── Model ─────────────────────────────────────────────────────
-const provider = ref<ModelConfig['provider']>(props.existing?.model?.provider ?? 'anthropic');
-const model = ref(props.existing?.model?.model ?? 'claude-sonnet-4-20250514');
+const provider = ref<string>(props.existing?.model?.provider ?? 'anthropic');
+const model = ref(props.existing?.model?.model ?? 'claude-sonnet-4-6');
 const temperature = ref<string>(props.existing?.model?.temperature?.toString() ?? '');
 const maxTokens = ref<string>(props.existing?.model?.maxTokens?.toString() ?? '');
+
+interface ProviderInfo {
+  name: string;
+  type: string;
+  baseUrl?: string;
+  defaultModel?: string;
+  hasApiKey: boolean;
+}
 
 interface ModelInfo {
   id: string;
@@ -54,6 +62,45 @@ interface ModelInfo {
     promptPerMTok: number;
     completionPerMTok: number;
   };
+}
+
+/** Return a human-readable display name for a provider. */
+function providerDisplayName(p: ProviderInfo): string {
+  const builtinNames: Record<string, string> = {
+    anthropic: 'Anthropic',
+    openai: 'OpenAI',
+    openrouter: 'OpenRouter',
+  };
+  return builtinNames[p.name] ?? p.name;
+}
+
+// Seed with built-ins so the select is immediately populated;
+// replaced by the live list once list_providers resolves.
+const defaultProviders: ProviderInfo[] = [
+  { name: 'anthropic',  type: 'anthropic',  hasApiKey: false },
+  { name: 'openai',     type: 'openai',     hasApiKey: false },
+  { name: 'openrouter', type: 'openrouter', hasApiKey: false },
+];
+
+const availableProviders = ref<ProviderInfo[]>(defaultProviders);
+const loadingProviders = ref(false);
+
+async function fetchProviders() {
+  loadingProviders.value = true;
+  try {
+    const result = await execute('list_providers', {});
+    console.log('list_providers result:', result);
+    if (result.status === 'success' && result.data) {
+      const parsed = JSON.parse(result.data as string);
+      if (parsed.providers?.length) {
+        availableProviders.value = parsed.providers as ProviderInfo[];
+      }
+    }
+  } catch {
+    // Keep the built-in defaults on error
+  } finally {
+    loadingProviders.value = false;
+  }
 }
 
 const { execute } = useTools();
@@ -85,13 +132,17 @@ async function fetchModels(prov: string) {
   }
 }
 
-onMounted(() => fetchModels(provider.value));
+onMounted(() => {
+  fetchProviders();
+  fetchModels(provider.value);
+});
 
 watch(provider, (newProvider) => {
   fetchModels(newProvider);
-  // If current model isn't from the new provider, clear it
+  // If current model isn't from the new provider, reset to the provider's stored default
   if (dynamicModels.value.length > 0 && !dynamicModels.value.find(m => m.id === model.value)) {
-    model.value = dynamicModels.value[0]?.id ?? '';
+    const storedDefault = availableProviders.value.find(p => p.name === newProvider)?.defaultModel;
+    model.value = storedDefault ?? dynamicModels.value[0]?.id ?? '';
   }
 });
 
@@ -249,10 +300,17 @@ function handleSubmit() {
             class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200
                    focus:outline-none focus:border-gray-500"
           >
-            <option value="anthropic">Anthropic</option>
-            <option value="openai">OpenAI</option>
-            <option value="openrouter">OpenRouter</option>
+            <option
+              v-for="p in availableProviders"
+              :key="p.name"
+              :value="p.name"
+            >{{ providerDisplayName(p) }}</option>
           </select>
+          <!-- Warn when the selected provider has no API key configured -->
+          <div
+            v-if="availableProviders.find(p => p.name === provider) && !availableProviders.find(p => p.name === provider)!.hasApiKey"
+            class="text-xs text-yellow-600 mt-1"
+          >No API key configured for {{ providerDisplayName(availableProviders.find(p => p.name === provider)!) }}</div>
         </div>
         <div>
           <label class="block text-sm text-gray-400 mb-1">Model</label>

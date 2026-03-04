@@ -455,19 +455,37 @@ export class AgentRuntime extends ParticipantRuntime {
    * real API keys or network calls.
    */
   protected createProvider(agentConfig: AgentConfig, context: RuntimeContext): LLMProvider {
-    const apiKey = context.config.resolveApiKey(agentConfig.model.provider);
+    const providerName = agentConfig.model.provider;
 
-    if (!apiKey) {
+    // Look up any stored config for this provider (may be undefined for built-ins
+    // that rely purely on env vars).
+    const storedConfig = context.config.getProviderConfig(providerName);
+
+    // Determine adapter type: explicit `type` field > `provider` field > built-in
+    // name for the three known providers > 'openai-compatible' for custom names.
+    const builtins = new Set(['anthropic', 'openai', 'openrouter']);
+    const adapterType =
+      storedConfig?.type ??
+      storedConfig?.provider ??
+      (builtins.has(providerName) ? providerName : 'openai-compatible');
+
+    const apiKey = context.config.resolveApiKey(providerName);
+    const isLocalCompatible = adapterType === 'openai-compatible';
+
+    if (!apiKey && !isLocalCompatible) {
       throw new Error(
-        `No API key found for provider "${agentConfig.model.provider}". ` +
+        `No API key found for provider "${providerName}". ` +
         `Set it via 'legion config set-provider' or the appropriate environment variable.`,
       );
     }
 
     return createProvider({
-      provider: agentConfig.model.provider,
-      apiKey,
-      baseUrl: undefined,
+      ...storedConfig,
+      type: adapterType,
+      name: providerName,
+      // Provider field kept for backward compat inside the factory
+      provider: adapterType,
+      apiKey: apiKey ?? 'local',
       defaultModel: agentConfig.model.model,
     });
   }

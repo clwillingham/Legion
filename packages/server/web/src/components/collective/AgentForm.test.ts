@@ -169,10 +169,16 @@ describe('AgentForm', () => {
     const selects = wrapper.findAll('select');
     const providerSelect = selects[0];
     const options = providerSelect.findAll('option');
-    expect(options.length).toBe(3);
-    expect(options.map(o => o.text())).toContain('Anthropic');
-    expect(options.map(o => o.text())).toContain('OpenAI');
-    expect(options.map(o => o.text())).toContain('OpenRouter');
+    // Defaults should include the three built-in providers (mock returns error so defaults persist)
+    const values = options.map(o => (o.element as HTMLOptionElement).value);
+    expect(values).toContain('anthropic');
+    expect(values).toContain('openai');
+    expect(values).toContain('openrouter');
+    // Display names of built-ins should be friendly
+    const texts = options.map(o => o.text());
+    expect(texts).toContain('Anthropic');
+    expect(texts).toContain('OpenAI');
+    expect(texts).toContain('OpenRouter');
   });
 
   it('shows Create Agent button in create mode', () => {

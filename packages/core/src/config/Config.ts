@@ -6,6 +6,7 @@ import {
   GlobalConfigSchema,
   type WorkspaceConfig,
   type GlobalConfig,
+  type ProviderConfigEntry,
 } from './ConfigSchema.js';
 
 /**
@@ -63,10 +64,26 @@ export class Config {
   }
 
   /**
+   * Get the merged config for a specific named provider.
+   * Returns undefined if the provider is not stored in either config layer.
+   * For built-in providers (anthropic, openai, openrouter) that rely purely
+   * on env vars this may return undefined even when usable.
+   */
+  getProviderConfig(name: string): ProviderConfigEntry | undefined {
+    const global = this.globalConfig?.providers?.[name];
+    const workspace = this.workspaceConfig?.providers?.[name];
+    if (!global && !workspace) return undefined;
+    return { ...global, ...workspace };
+  }
+
+  /**
    * Resolve an API key for a provider. Checks:
    * 1. Direct apiKey from **global** config only (never workspace — secrets stay out of git)
    * 2. Custom env var name (apiKeyEnv) from merged config
    * 3. Standard env var names (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
+   *
+   * Returns undefined when no key is found — the caller decides whether
+   * an absent key is an error (cloud providers) or acceptable (local servers).
    */
   resolveApiKey(providerName: string): string | undefined {
     // 1. Direct API key from GLOBAL config only — never read secrets from workspace config
@@ -82,7 +99,7 @@ export class Config {
       return process.env[mergedProvider.apiKeyEnv];
     }
 
-    // 3. Standard env vars
+    // 3. Standard env vars for built-in providers
     const standardEnvVars: Record<string, string> = {
       anthropic: 'ANTHROPIC_API_KEY',
       openai: 'OPENAI_API_KEY',
@@ -103,11 +120,11 @@ export class Config {
    */
   async saveProviderCredentials(
     providerName: string,
-    credentials: { provider: 'anthropic' | 'openai' | 'openrouter'; apiKey?: string; apiKeyEnv?: string },
+    credentials: { provider?: string; type?: string; apiKey?: string; apiKeyEnv?: string },
   ): Promise<void> {
     const global = this.getGlobal();
     const existing = global.providers?.[providerName] ?? {};
-    const updated = { ...existing, ...credentials };
+    const updated = { ...existing, ...credentials } as ProviderConfigEntry;
     const providers = { ...global.providers, [providerName]: updated };
     await this.saveGlobalConfig({ ...global, providers });
   }

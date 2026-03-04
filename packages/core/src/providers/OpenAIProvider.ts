@@ -185,9 +185,23 @@ export class OpenAIProvider implements LLMProvider {
             : undefined,
         };
       });
+
+      // If the server returned an empty list (e.g. llama.cpp with no model loaded)
+      // fall through to the static-list / known-models fallback.
+      if (models.length === 0) throw new Error('empty model list');
     } catch {
-      // If API call fails, fall back to known models only
-      models = getKnownModelsForProvider('openai');
+      // Fall back to: (a) configured static model list, then (b) known-models registry
+      const staticModels = this.config.models ?? [];
+      if (staticModels.length > 0) {
+        models = staticModels.map((m) =>
+          typeof m === 'string'
+            ? { id: m, name: m, provider: this.name }
+            : { id: m.id, name: m.name ?? m.id, provider: this.name,
+                description: m.description, contextLength: m.contextLength },
+        );
+      } else {
+        models = getKnownModelsForProvider(this.name);
+      }
     }
 
     this.modelCache = { data: models, expiry: Date.now() + OpenAIProvider.CACHE_TTL_MS };

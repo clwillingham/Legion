@@ -16,8 +16,10 @@
     "web/dist"
   ],
   "scripts": {
-    "build": "tsup",
-    "clean": "rm -rf dist",
+    "build": "tsup && npm run build --prefix web",
+    "build:server": "tsup",
+    "build:web": "npm run build --prefix web",
+    "clean": "rm -rf dist web/dist",
     "dev": "tsup --watch"
   },
   "keywords": [

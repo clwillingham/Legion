@@ -6,7 +6,9 @@ import { useApi } from './useApi.js';
 // ============================================================
 
 export interface ModelConfig {
-  provider: 'anthropic' | 'openai' | 'openrouter';
+  /** Provider name. Built-ins: 'anthropic', 'openai', 'openrouter'.
+   *  Any custom openai-compatible provider name is also valid. */
+  provider: string;
   model: string;
   temperature?: number;
   maxTokens?: number;

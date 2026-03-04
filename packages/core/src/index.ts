@@ -82,6 +82,7 @@ export {
   retireAgentTool,
   listToolsTool,
   listModelsTool,
+  listProvidersTool,
   agentTools,
 } from './tools/agent-tools.js';
 export {
@@ -144,6 +145,7 @@ export type {
   RuntimeLimits,
   AuthPolicy,
   ProcessManagementConfig,
+  ProviderConfigEntry,
 } from './config/ConfigSchema.js';
 export {
   WorkspaceConfigSchema,

@@ -1,7 +1,7 @@
 # Phase 4: Web Interface — Design Document
 
 **Created**: March 3, 2026
-**Status**: Milestones 4.1 and 4.2 complete
+**Status**: Milestones 4.1, 4.2, and 4.3 complete
 
 ---
 
@@ -30,7 +30,8 @@ packages/server/                     # @legion-collective/server
 │   │   ├── approvals.ts            # POST /api/approvals/:id/respond
 │   │   ├── processes.ts            # GET/POST /api/processes, POST /api/processes/:id/stop
 │   │   ├── files.ts                # GET /api/files (tree), GET/PUT /api/files/* (content)
-│   │   └── config.ts               # GET/PUT /api/config (workspace config only)
+│   │   ├── config.ts               # GET/PUT /api/config (workspace config only)
+│   │   └── tools.ts                # GET /api/tools, POST /api/tools/:name/execute
 │   ├── websocket/
 │   │   ├── bridge.ts               # EventBus → WebSocket broadcast
 │   │   └── handlers.ts             # WS message handlers (user input, approval responses)
@@ -51,6 +52,7 @@ packages/server/                     # @legion-collective/server
 │   │   │   ├── useApi.ts            # REST API client
 │   │   │   ├── useSession.ts        # Session + conversation + message state
 │   │   │   ├── useCollective.ts     # Participants state + CRUD
+│   │   │   ├── useTools.ts          # Tool execution gateway (list + execute via ToolRegistry)
 │   │   │   └── useProcesses.ts      # Process state + output buffers
 │   │   ├── components/
 │   │   │   ├── chat/
@@ -60,9 +62,10 @@ packages/server/                     # @legion-collective/server
 │   │   │   │   ├── ToolCallBlock.vue
 │   │   │   │   └── ApprovalCard.vue
 │   │   │   ├── collective/
-│   │   │   │   ├── ParticipantList.vue
 │   │   │   │   ├── ParticipantCard.vue
-│   │   │   │   └── AgentForm.vue
+│   │   │   │   ├── AgentForm.vue
+│   │   │   │   ├── ToolPolicyEditor.vue     # Granular per-tool auth config
+│   │   │   │   └── ApprovalAuthorityEditor.vue  # Per-participant approval config
 │   │   │   ├── sessions/
 │   │   │   │   ├── SessionList.vue
 │   │   │   │   └── SessionDashboard.vue
@@ -79,6 +82,8 @@ packages/server/                     # @legion-collective/server
 │   │   │       ├── AppLayout.vue
 │   │   │       ├── Sidebar.vue
 │   │   │       └── TopBar.vue
+│   │   ├── utils/
+│   │   │   └── tool-categories.ts   # Known tool names, categories, default modes
 │   │   └── views/
 │   │       ├── ChatView.vue
 │   │       ├── CollectiveView.vue
@@ -173,6 +178,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   await fastify.register(processRoutes, { prefix: '/api' });
   await fastify.register(fileRoutes, { prefix: '/api' });
   await fastify.register(configRoutes, { prefix: '/api' });
+  await fastify.register(toolRoutes, { prefix: '/api' });
 
   // WebSocket endpoint
   await fastify.register(websocketPlugin);
@@ -330,6 +336,17 @@ File reads and writes go through the tool system, which means they respect autho
 | `PUT` | `/api/config` | Update workspace configuration |
 
 Only workspace configuration (`.legion/config.json`) is exposed. Global configuration (API keys) is deferred to Phase 6 when token auth + multi-user support are added.
+
+### Tool Execution Gateway
+
+Generic endpoints that expose the `ToolRegistry` to the web frontend. Rather than building individual REST endpoints for each data need (models, tools, etc.), the frontend can execute any registered tool as the user — staying within Legion's philosophy of tools as the universal interface.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/tools` | List all registered tools (name, description, parameters) |
+| `POST` | `/api/tools/:name/execute` | Execute a tool by name as the user (body = tool arguments) |
+
+The execute endpoint creates a full `RuntimeContext` (with workspace, tool registry, and authorization) and runs the tool. This powers dynamic features like model listing (`list_models`), tool discovery (`list_tools`), and any future tools added to the registry — without needing new REST endpoints.
 
 ---
 
@@ -588,7 +605,8 @@ composables/
 ├── useWebSocket.ts   — WS connection, message dispatch, onMessage subscription
 ├── useApi.ts         — REST API client (fetch wrappers)
 ├── useSession.ts     — active session, conversations, messages (subscribes to WS events)
-├── useCollective.ts  — participants state, CRUD actions
+├── useCollective.ts  — participants state, CRUD actions, authorization types
+├── useTools.ts       — tool execution gateway (list + execute via ToolRegistry)
 └── useProcesses.ts   — tracked processes, output buffers (subscribes to WS process events)
 ```
 
@@ -632,7 +650,7 @@ const routes = [
 12. ✅ `WebRuntime` implementation
 13. ✅ Web approval handler (delegates to WS client)
 14. ✅ `legion serve` CLI command (dynamic import, optional dependency)
-15. ✅ Unit + integration tests (20 server tests, 372 total)
+15. ✅ Unit + integration tests (22 server tests, 377 total)
 
 ### 4.2: Vue Chat Panel ✅
 
@@ -648,15 +666,33 @@ const routes = [
 8. ✅ Agent activity indicators (loading/typing states, tool call display)
 9. ⬚ Multi-conversation tabs — deferred (single conversation view works)
 10. ✅ `@fastify/static` serves built SPA
-11. ✅ Component + composable tests (37 tests via Vitest + Vue Test Utils + happy-dom)
+11. ✅ Component + composable tests (112 tests via Vitest + Vue Test Utils + happy-dom)
 
-### 4.3: Collective Management UI
+### 4.3: Collective Management UI ✅
 
-1. Participant list/cards view
-2. Agent creation form
-3. Agent modification form
-4. Agent retire action with confirmation
-5. `useCollective` composable wired to collective REST routes
+**Goal**: Full agent lifecycle management — create, edit, retire agents with granular authorization configuration.
+
+1. ✅ `CollectiveView` — filterable participant list with type/status controls, retired toggle
+2. ✅ `ParticipantCard` — participant summary cards with model, tool summary, edit/retire actions
+3. ✅ `AgentForm` — create/edit form with collapsible `<details>` sections
+4. ✅ Dynamic model loading via `list_models` tool execution (with text input fallback)
+5. ✅ Model metadata display (description, context length, pricing)
+6. ✅ `ToolPolicyEditor` — progressive disclosure tool authorization:
+   - Presets: all-auto / all-approval / per-tool
+   - Per-tool mode selectors grouped by category (Read/Write/Communication/Process)
+   - Inline scope rules editor (paths, argPatterns) for granular authorization
+   - Quick actions: "Read → auto", "Write → approval", "Reset defaults"
+   - Dynamic tool discovery via `list_tools` execution, falls back to static categories
+7. ✅ `ApprovalAuthorityEditor` — per-participant approval authority:
+   - Presets: no authority / full authority / custom
+   - Custom mode: participant selector dropdown, per-entry tool checkboxes by category
+   - Select-all / deselect-all per category
+8. ✅ Runtime limits section (maxIterations, maxCommunicationDepth, maxTurnsPerCommunication)
+9. ✅ Tool execution gateway — `GET /api/tools` + `POST /api/tools/:name/execute` (generic ToolRegistry access)
+10. ✅ `useTools` composable — `list()` and `execute()` wrapping tool gateway endpoints
+11. ✅ `useCollective` expanded types — full authorization type hierarchy (ToolPolicy union, AuthRule, ScopeCondition, ApprovalAuthority)
+12. ✅ `tool-categories.ts` utility — known tool names, categories, default modes
+13. ✅ Tests: 63 collective component tests (ParticipantCard 17, AgentForm 20, ToolPolicyEditor 12, ApprovalAuthorityEditor 14) + 5 tool route server tests
 
 ### 4.4: Session Dashboard
 
