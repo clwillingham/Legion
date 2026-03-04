@@ -4,7 +4,8 @@
   "description": "A persistent multi-agent collective with peer-to-peer communication",
   "workspaces": [
     "packages/core",
-    "packages/cli"
+    "packages/cli",
+    "packages/server"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

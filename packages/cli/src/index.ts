@@ -11,6 +11,7 @@ import { initCommand } from './commands/init.js';
 import { startCommand } from './commands/start.js';
 import { configCommand } from './commands/config.js';
 import { collectiveCommand } from './commands/collective.js';
+import { serveCommand } from './commands/serve.js';
 
 const program = new Command();
 
@@ -23,5 +24,6 @@ program.addCommand(initCommand);
 program.addCommand(startCommand);
 program.addCommand(configCommand);
 program.addCommand(collectiveCommand);
+program.addCommand(serveCommand);
 
 program.parse();

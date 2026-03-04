@@ -15,7 +15,7 @@ export default defineConfig({
   noExternal: [],
   external: [
     /^node:/,
-    /^@legion\//,
+    /^@legion-collective\//,
     'commander',
     'chalk',
     '@inquirer/prompts',

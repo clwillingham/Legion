@@ -1,13 +1,10 @@
 {
-  "name": "@legion-collective/cli",
-  "version": "0.1.1",
-  "description": "Legion CLI — REPL and command-line interface for the Legion collective",
+  "name": "@legion-collective/server",
+  "version": "0.1.0",
+  "description": "Legion web server — HTTP + WebSocket interface for the Legion collective",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "legion": "dist/index.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -15,7 +12,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "web/dist"
   ],
   "scripts": {
     "build": "tsup",
@@ -29,15 +27,15 @@
     "llm",
     "collective",
     "orchestration",
-    "cli",
-    "repl"
+    "server",
+    "web"
   ],
   "author": "clwillingham",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/clwillingham/Legion.git",
-    "directory": "packages/cli"
+    "directory": "packages/server"
   },
   "homepage": "https://github.com/clwillingham/Legion#readme",
   "publishConfig": {
@@ -45,15 +43,12 @@
   },
   "dependencies": {
     "@legion-collective/core": "^0.1.0",
-    "chalk": "^5.4.0",
-    "commander": "^13.1.0",
-    "inquirer": "^12.4.0",
-    "ora": "^8.2.0"
-  },
-  "optionalDependencies": {
-    "@legion-collective/server": "^0.1.0"
+    "fastify": "^5.7.4",
+    "@fastify/websocket": "^11.2.0",
+    "@fastify/static": "^9.0.0"
   },
   "devDependencies": {
+    "@types/node": "^25.3.2",
     "tsup": "^8.4.0",
     "typescript": "^5.7.0"
   }

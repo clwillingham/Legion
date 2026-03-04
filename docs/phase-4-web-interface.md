@@ -1,7 +1,7 @@
 # Phase 4: Web Interface — Design Document
 
 **Created**: March 3, 2026
-**Status**: Planning complete, implementation next
+**Status**: Milestones 4.1 and 4.2 complete
 
 ---
 
@@ -614,40 +614,41 @@ const routes = [
 
 ## Milestone Breakdown
 
-### 4.1: Server Layer
+### 4.1: Server Layer ✅
 
 **Goal**: Fastify server with REST API, WebSocket, and WebRuntime — no frontend yet, testable via curl/wscat.
 
-1. Scaffold `packages/server` (package.json, tsconfig, tsup)
-2. Add to monorepo workspaces in root package.json
-3. Implement `createServer()` factory and Fastify setup
-4. WebSocket plugin with `WebSocketManager` (track connections, broadcast)
-5. EventBus → WS bridge
-6. REST routes: collective CRUD
-7. REST routes: session management + send message
-8. REST routes: approval actions
-9. REST routes: process management
-10. REST routes: file operations (through tool system)
-11. REST routes: workspace config
-12. `WebRuntime` implementation
-13. Web approval handler (delegates to WS client)
-14. `legion serve` CLI command
-15. Unit + integration tests
+1. ✅ Scaffold `packages/server` (package.json, tsconfig, tsup)
+2. ✅ Add to monorepo workspaces in root package.json
+3. ✅ Implement `createServer()` factory and Fastify setup
+4. ✅ WebSocket plugin with `WebSocketManager` (track connections, broadcast)
+5. ✅ EventBus → WS bridge
+6. ✅ REST routes: collective CRUD
+7. ✅ REST routes: session management + send message
+8. ✅ REST routes: approval actions
+9. ✅ REST routes: process management
+10. ✅ REST routes: file operations (tree, read, write with workspace boundary check)
+11. ✅ REST routes: workspace config
+12. ✅ `WebRuntime` implementation
+13. ✅ Web approval handler (delegates to WS client)
+14. ✅ `legion serve` CLI command (dynamic import, optional dependency)
+15. ✅ Unit + integration tests (20 server tests, 372 total)
 
-### 4.2: Vue Chat Panel
+### 4.2: Vue Chat Panel ✅
 
 **Goal**: Working chat interface — send messages, see responses, approve/reject tools.
 
-1. Scaffold Vue 3 + Vite + Tailwind project in `packages/server/web/`
-2. `useWebSocket` composable + connection management
-3. `useSession` + `useCollective` state composables
-4. App layout (sidebar, topbar, main area)
-5. Chat message display (MessageBubble, ToolCallBlock)
-6. Message input with target selector
-7. Inline approval cards (ApprovalCard)
-8. Agent activity indicators (loading/typing states)
-9. Multi-conversation tabs
-10. `@fastify/static` serves built SPA
+1. ✅ Scaffold Vue 3 + Vite + Tailwind project in `packages/server/web/`
+2. ✅ `useWebSocket` composable + connection management (auto-reconnect)
+3. ✅ `useSession` + `useCollective` + `useProcesses` state composables
+4. ✅ App layout (sidebar, topbar, main area)
+5. ✅ Chat message display (MessageBubble, ToolCallBlock)
+6. ✅ Message input with target selector
+7. ✅ Inline approval cards (ApprovalCard)
+8. ✅ Agent activity indicators (loading/typing states, tool call display)
+9. ⬚ Multi-conversation tabs — deferred (single conversation view works)
+10. ✅ `@fastify/static` serves built SPA
+11. ✅ Component + composable tests (37 tests via Vitest + Vue Test Utils + happy-dom)
 
 ### 4.3: Collective Management UI
 

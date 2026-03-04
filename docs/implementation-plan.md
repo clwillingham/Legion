@@ -1006,7 +1006,7 @@ A user can:
 - [x] Bug fix: `resume()` re-authorized already-approved tools via ToolExecutor
 - [x] Bug fix: Conversations saved to wrong directory (double `sessions/` prefix)
 
-**Total**: 352 tests passing across 11 test files
+**Total**: 352 tests passing across 11 test files (core + CLI)
 
 ---
 
@@ -1059,30 +1059,42 @@ The server registers `WebRuntime` as `user:web` in the `RuntimeRegistry`. When a
 
 This is symmetric with `REPLRuntime` (blocks on terminal input) — the Conversation doesn't know which runtime it's talking to.
 
-### Milestone 4.1: Server Layer
-- [ ] `packages/server` package scaffolding (package.json, tsconfig, tsup config)
-- [ ] Fastify HTTP server with `createServer()` factory exported
-- [ ] `@fastify/websocket` integration for real-time streaming
-- [ ] EventBus → WebSocket bridge (subscribe to core events, broadcast to connected clients)
-- [ ] REST API: collective CRUD (`GET/POST/PUT /api/collective/participants`)
-- [ ] REST API: session management (`GET/POST /api/sessions`, `GET /api/sessions/:id/conversations`)
-- [ ] REST API: messages (`GET /api/conversations/:id/messages`, `POST /api/sessions/:id/send`)
-- [ ] REST API: approval actions (`POST /api/approvals/:id/respond`)
-- [ ] REST API: process management (`GET/POST /api/processes`)
-- [ ] `@fastify/static` serves built Vue app from `web/dist/`
-- [ ] `WebRuntime` — implements `ParticipantRuntime` for browser users
-- [ ] `WebRuntime` error handling — returns error if no WS client connected
-- [ ] `legion serve` CLI command (thin wrapper calling `createServer()`)
+### Milestone 4.1: Server Layer ✅
+- [x] `packages/server` package scaffolding (package.json, tsconfig, tsup config)
+- [x] Fastify HTTP server with `LegionServer` class and `createServer()` factory
+- [x] `@fastify/websocket` integration for real-time streaming
+- [x] `WebSocketManager` — tracks connected clients, broadcast, auto-remove on close
+- [x] EventBus → WebSocket bridge (subscribe to core events, broadcast to connected clients)
+- [x] REST API: collective CRUD (`GET/POST/PUT/DELETE /api/collective/participants`)
+- [x] REST API: session management (`GET/POST /api/sessions`, `GET /api/sessions/:id/conversations`)
+- [x] REST API: messages (`GET /api/sessions/:id/conversations/:convId/messages` with pagination, `POST /api/sessions/:id/send`)
+- [x] REST API: approval actions (`GET /api/approvals/pending`, `POST /api/approvals/:id/respond`)
+- [x] REST API: process management (`GET /api/processes`, `GET /api/processes/:id`, `POST /api/processes/:id/stop`)
+- [x] REST API: file operations (`GET /api/files/tree`, `GET/PUT /api/files/content`)
+- [x] REST API: workspace config (`GET/PUT /api/config`)
+- [x] `@fastify/static` serves built Vue app from `web/dist/` with SPA fallback
+- [x] `WebRuntime` — implements `ParticipantRuntime` for browser users
+- [x] `WebRuntime` error handling — returns error if no WS client connected, 5-min timeout
+- [x] Web approval handler — broadcasts approval requests via WS, waits for browser response
+- [x] `legion serve` CLI command (dynamic import, `@legion-collective/server` as optionalDependency)
+- [x] 20 server tests (12 server integration + 5 WebSocketManager + 3 WebRuntime)
 
-### Milestone 4.2: Vue.js Chat Panel
-- [ ] Vue 3 + Vite + Tailwind CSS project scaffolding in `packages/server/web/`
-- [ ] WebSocket client service (connect, reconnect, message handling)
-- [ ] Chat interface for user ↔ participant conversations
-- [ ] Message history display with participant avatars/names
-- [ ] Inline approval requests (approve/reject buttons with reason field)
-- [ ] Agent activity indicators (spinner/typing when agents are working)
-- [ ] Multi-conversation tabs (named sessions)
-- [ ] Tool call display (collapsible tool call/result blocks)
+### Milestone 4.2: Vue.js Chat Panel ✅
+- [x] Vue 3 + Vite + Tailwind CSS project scaffolding in `packages/server/web/`
+- [x] `useWebSocket` composable — WS connection, auto-reconnect, message dispatch
+- [x] `useApi` composable — REST client wrapper (GET/POST/PUT/DELETE)
+- [x] `useSession` composable — session state, conversations, messages, approvals, agent activity
+- [x] `useCollective` composable — participant state + loading
+- [x] `useProcesses` composable — process state with real-time WS updates
+- [x] App layout: `AppLayout`, `Sidebar` (nav links), `TopBar` (session name, WS status)
+- [x] Chat interface: `ChatPanel`, `MessageBubble`, `MessageInput` (with target selector)
+- [x] `ToolCallBlock` — display tool calls inline in messages
+- [x] `ApprovalCard` — inline approve/reject with reason field
+- [x] Agent activity indicators (thinking spinner, active tool call display)
+- [x] Views: `ChatView`, `CollectiveView`, `SessionsView`, `ProcessesView`
+- [x] Vue Router with routes for `/chat`, `/collective`, `/sessions`, `/processes`
+- [x] 37 component/composable tests (Vitest + Vue Test Utils + happy-dom)
+- [ ] Multi-conversation tabs — deferred (single conversation view works)
 
 ### Milestone 4.3: Collective Management UI
 - [ ] View collective participants with details (cards/list view)
@@ -1241,14 +1253,14 @@ Decisions that can be deferred but should be tracked:
 | **Phase 1** | Core Engine MVP | ✅ Complete |
 | **Phase 2** | Process Management & Extended Tools | ✅ Complete |
 | **Phase 3** | Authorization & Approval | ✅ Complete (352 tests) |
-| **Phase 4** | Web Interface (Fastify + Vue 3) | 🟡 Planning complete, implementation next |
+| **Phase 4** | Web Interface (Fastify + Vue 3) | 🟡 4.1 + 4.2 complete (server + chat), 4.3–4.7 remaining |
 | **Phase 5** | Learning & Memory | Not started |
 | **Phase 6** | Advanced Features | Not started |
 
-Phases 1–3 are complete. Phase 4 introduces new surface area (HTTP server + Vue SPA) but the backend integration is already designed via the event system and RuntimeRegistry.
+Phases 1–3 are complete. Phase 4 milestones 4.1 (Server Layer) and 4.2 (Vue Chat Panel) are complete — 20 server tests + 37 web tests + 372 monorepo tests all passing. Milestones 4.3–4.7 add more UI views.
 
 ---
 
 ## Next Step
 
-Begin Phase 4, Milestone 4.1: Server Layer. Scaffold `packages/server`, set up Fastify with WebSocket support, implement the EventBus → WS bridge, and build REST API endpoints. Then add the `legion serve` CLI command.
+Continue Phase 4 with Milestone 4.3: Collective Management UI. The server REST API already supports full CRUD for participants — this milestone adds Vue components for viewing, creating, modifying, and retiring agents via the existing `/api/collective/participants` endpoints.

@@ -4,23 +4,23 @@
   "name": "Project Researcher",
   "description": "A research agent responsible for exploring the project workspace — reading the codebase, docs, and config files — and producing a structured summary to inform collective design decisions.",
   "tools": {
-    "communicate": {
-      "mode": "auto"
-    },
-    "list_participants": {
-      "mode": "auto"
+    "*": {
+      "mode": "requires_approval"
     },
     "file_read": {
       "mode": "auto"
     },
-    "file_write": {
-      "mode": "requires_approval"
+    "file_analyze": {
+      "mode": "auto"
+    },
+    "file_search": {
+      "mode": "auto"
+    },
+    "file_grep": {
+      "mode": "auto"
     },
     "directory_list": {
       "mode": "auto"
-    },
-    "process_exec": {
-      "mode": "requires_approval"
     }
   },
   "approvalAuthority": {},

@@ -1,0 +1,20 @@
+{
+  "id": "test-agent",
+  "type": "agent",
+  "name": "Test Agent",
+  "description": "Testing for manual creation in the collective",
+  "tools": {
+    "*": {
+      "mode": "requires_approval"
+    }
+  },
+  "approvalAuthority": {},
+  "status": "active",
+  "model": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001"
+  },
+  "systemPrompt": "You are a useless agent for testing the frontend, nothing more. test",
+  "createdBy": "user",
+  "createdAt": "2026-03-04T03:31:02.608Z"
+}
