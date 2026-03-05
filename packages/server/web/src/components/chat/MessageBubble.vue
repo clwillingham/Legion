@@ -7,7 +7,9 @@ const props = defineProps<{
   participantName?: string;
 }>();
 
-const isUser = props.message.role === 'user' && props.message.participantId === 'user';
+// Align by participantId, not role — roles are relative to conversation direction
+// (in agent-initiated convs the human has role 'assistant'), so we can't rely on them.
+const isUser = props.message.participantId === 'user';
 </script>
 
 <template>

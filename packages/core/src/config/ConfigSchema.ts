@@ -17,11 +17,12 @@ export const ProviderConfigSchema = z.object({
    * - 'anthropic'         — Anthropic SDK
    * - 'openai'            — OpenAI SDK (official OpenAI endpoints)
    * - 'openrouter'        — OpenAI SDK + OpenRouter base URL / model listing
+   * - 'github-models'     — OpenAI-compatible GitHub Models API (PAT with models:read)
    * - 'openai-compatible' — OpenAI SDK with a custom baseUrl (llama.cpp, vLLM, etc.)
    *
    * If omitted, defaults to the provider name for backward compat.
    */
-  type: z.enum(['anthropic', 'openai', 'openrouter', 'openai-compatible']).optional(),
+  type: z.enum(['anthropic', 'openai', 'openrouter', 'github-models', 'openai-compatible']).optional(),
 
   /** Kept for backward compatibility — acts as `type` when `type` is absent. */
   provider: z.string().optional(),

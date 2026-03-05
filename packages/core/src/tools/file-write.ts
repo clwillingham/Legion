@@ -45,7 +45,7 @@ export const fileWriteTool: Tool = {
     }
 
     if (content === undefined || content === null) {
-      return { status: 'error', error: 'content is required.' };
+      return { status: 'error', error: 'Content was not received. This could be because the input was empty or too large' };
     }
 
     // For now, resolve from cwd. Workspace root will be injected later.

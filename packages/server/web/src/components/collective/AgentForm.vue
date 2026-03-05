@@ -11,6 +11,8 @@ import type {
 import { useTools } from '../../composables/useTools.js';
 import ToolPolicyEditor from './ToolPolicyEditor.vue';
 import ApprovalAuthorityEditor from './ApprovalAuthorityEditor.vue';
+import ModelSelect from './ModelSelect.vue';
+import type { ModelInfo } from './ModelSelect.vue';
 
 const props = defineProps<{
   /** If provided, pre-populate for editing. Otherwise, create mode. */
@@ -50,18 +52,6 @@ interface ProviderInfo {
   baseUrl?: string;
   defaultModel?: string;
   hasApiKey: boolean;
-}
-
-interface ModelInfo {
-  id: string;
-  name: string;
-  provider: string;
-  description?: string;
-  contextLength?: number;
-  pricing?: {
-    promptPerMTok: number;
-    completionPerMTok: number;
-  };
 }
 
 /** Return a human-readable display name for a provider. */
@@ -115,7 +105,7 @@ async function fetchModels(prov: string) {
     const result = await execute('list_models', {
       provider: prov,
       format: 'json',
-      limit: 100,
+      limit: 500,
     });
     if (result.status === 'success' && result.data) {
       const parsed = JSON.parse(result.data as string);
@@ -314,17 +304,13 @@ function handleSubmit() {
         </div>
         <div>
           <label class="block text-sm text-gray-400 mb-1">Model</label>
-          <div v-if="loadingModels" class="text-xs text-gray-500 py-2">Loading models...</div>
-          <select
-            v-else-if="dynamicModels.length > 0"
+          <ModelSelect
+            v-if="dynamicModels.length > 0 || loadingModels"
             v-model="model"
-            class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200
-                   focus:outline-none focus:border-gray-500"
-          >
-            <option v-for="m in dynamicModels" :key="m.id" :value="m.id">
-              {{ m.name || m.id }}
-            </option>
-          </select>
+            :models="dynamicModels"
+            :loading="loadingModels"
+            :error="modelError"
+          />
           <input
             v-else
             v-model="model"
@@ -333,7 +319,7 @@ function handleSubmit() {
             class="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200
                    focus:outline-none focus:border-gray-500"
           />
-          <div v-if="modelError" class="text-xs text-yellow-500 mt-1">{{ modelError }}</div>
+          <div v-if="modelError && dynamicModels.length === 0" class="text-xs text-yellow-500 mt-1">{{ modelError }}</div>
         </div>
       </div>
 

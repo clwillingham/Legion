@@ -8,6 +8,9 @@ dist/
 # Legion workspace data (sessions are local)
 .legion/sessions/
 
+# copilot skills
+.github/skills
+
 # Environment
 .env
 .env.local

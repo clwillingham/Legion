@@ -112,6 +112,7 @@ export type {
   ListModelsResult,
 } from './providers/Provider.js';
 export { AnthropicProvider } from './providers/AnthropicProvider.js';
+export { GitHubModelsProvider } from './providers/GitHubModelsProvider.js';
 export { OpenAIProvider } from './providers/OpenAIProvider.js';
 export { OpenRouterProvider } from './providers/OpenRouterProvider.js';
 export { createProvider } from './providers/ProviderFactory.js';

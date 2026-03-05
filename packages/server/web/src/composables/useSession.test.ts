@@ -241,6 +241,42 @@ describe('useSession', () => {
     });
   });
 
+  it('loadConversations does NOT set agentWorking=true when last message is from user (crashed session)', async () => {
+    const { useWebSocket, useSession } = await freshModules();
+    const { connect } = useWebSocket();
+    connect();
+
+    // Mock fetch to simulate a session that ended in a bad state:
+    // the last message in the conversation was from the user (no agent reply).
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (String(url).includes('/sessions/s1/conversations')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              sessionId: 's1',
+              initiatorId: 'user',
+              targetId: 'agent-1',
+              messages: [
+                { role: 'user', participantId: 'user', content: 'hello', timestamp: '2025-01-01T00:00:00Z' },
+              ],
+              createdAt: '2025-01-01T00:00:00Z',
+            },
+          ],
+        };
+      }
+      return { ok: true, json: async () => [] };
+    });
+
+    const { agentWorking, session, loadConversations } = useSession();
+
+    session.value = { id: 's1', name: 'Test', createdAt: '', status: 'active' };
+    await loadConversations();
+
+    // Bug: was setting agentWorking=true here, causing "Agent is thinking..." forever
+    expect(agentWorking.value).toBe(false);
+  });
+
   it('respondToApproval sends approval response via WS', async () => {
     const { useWebSocket, useSession } = await freshModules();
     const { connect } = useWebSocket();

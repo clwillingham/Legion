@@ -1,5 +1,6 @@
 import type { LLMProvider, ProviderConfig } from './Provider.js';
 import { AnthropicProvider } from './AnthropicProvider.js';
+import { GitHubModelsProvider } from './GitHubModelsProvider.js';
 import { OpenAIProvider } from './OpenAIProvider.js';
 import { OpenRouterProvider } from './OpenRouterProvider.js';
 
@@ -11,6 +12,8 @@ import { OpenRouterProvider } from './OpenRouterProvider.js';
  *
  * For 'openai-compatible', an OpenAIProvider is created with the custom
  * baseUrl and the provider's name (populated by the caller).
+ * For 'github-models', a GitHubModelsProvider is created; it uses the
+ * OpenAI-compatible GitHub Models inference API with a GitHub PAT.
  */
 export function createProvider(config: ProviderConfig): LLMProvider {
   // `type` is the authoritative adapter discriminator; fall back to `provider`
@@ -24,6 +27,8 @@ export function createProvider(config: ProviderConfig): LLMProvider {
       return new OpenAIProvider(config);
     case 'openrouter':
       return new OpenRouterProvider(config);
+    case 'github-models':
+      return new GitHubModelsProvider(config);
     case 'openai-compatible':
       // Reuse OpenAIProvider with the custom baseUrl.
       // `config.name` is the user-chosen provider record key (e.g. 'llamacpp').
@@ -31,7 +36,7 @@ export function createProvider(config: ProviderConfig): LLMProvider {
     default:
       throw new Error(
         `Unknown provider adapter type "${adapterType}" for provider "${config.name ?? config.provider}". ` +
-        `Valid adapter types: anthropic, openai, openrouter, openai-compatible.`,
+        `Valid adapter types: anthropic, openai, openrouter, github-models, openai-compatible.`,
       );
   }
 }

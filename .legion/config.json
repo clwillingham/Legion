@@ -1,0 +1,8 @@
+{
+  "providers": {
+    "github-models": {
+      "type": "github-models",
+      "provider": "github-models"
+    }
+  }
+}

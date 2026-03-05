@@ -9,7 +9,8 @@ import ApprovalCard from './ApprovalCard.vue';
 
 const {
   conversations, messages, pendingApprovals, agentWorking, activeToolCall,
-  activeConversationKey, sendMessage, setActiveConversation, respondToApproval,
+  activeConversationKey, awaitingAgentResponseConvId, sendMessage, setActiveConversation,
+  respondToApproval, respondToAgent,
 } = useSession();
 const { participants } = useCollective();
 
@@ -21,12 +22,16 @@ const agentParticipants = computed(() =>
     .map(p => ({ id: p.id, name: p.name })),
 );
 
-/** Extract the target agent ID from the active conversation key. */
+/** Extract the agent ID from the active conversation key regardless of direction.
+ *  Handles both "user__agentId" (user-initiated) and "agentId__user" (agent-initiated). */
 const activeTarget = computed(() => {
   const key = activeConversationKey.value;
   if (!key) return null;
   const parts = key.split('__');
-  return parts.length >= 2 ? parts[1] : null;
+  if (parts.length < 2) return null;
+  // If the user is the initiator (user__agentId), the agent is parts[1].
+  // If the agent is the initiator (agentId__user), the agent is parts[0].
+  return parts[0] === 'user' ? parts[1] : parts[0];
 });
 
 /** Display name for the active conversation's agent. */
@@ -46,9 +51,17 @@ function getParticipantName(id: string): string {
 }
 
 function handleSend(message: string) {
-  const target = activeTarget.value;
-  if (!target) return;
-  sendMessage(target, message);
+  const key = activeConversationKey.value;
+  if (!key) return;
+
+  if (awaitingAgentResponseConvId.value === key) {
+    // Agent-initiated conversation: respond to the waiting WebRuntime
+    respondToAgent(key, message);
+  } else {
+    const target = activeTarget.value;
+    if (!target) return;
+    sendMessage(target, message);
+  }
 }
 
 function handleNewConversation(agentId: string) {
@@ -77,6 +90,7 @@ watch(currentMessages, async () => {
         :messages="messages"
         :active-key="activeConversationKey"
         :agents="agentParticipants"
+        :awaiting-response-key="awaitingAgentResponseConvId"
         @select="setActiveConversation"
         @new-conversation="handleNewConversation"
       />
@@ -117,9 +131,13 @@ watch(currentMessages, async () => {
             @respond="handleApprovalRespond"
           />
 
-          <div v-if="agentWorking" class="flex items-center gap-2 text-gray-500 text-sm px-4">
+          <div v-if="agentWorking || awaitingAgentResponseConvId === activeConversationKey"
+               class="flex items-center gap-2 text-gray-500 text-sm px-4">
             <span class="animate-pulse">●</span>
-            <span v-if="activeToolCall">
+            <span v-if="awaitingAgentResponseConvId === activeConversationKey" class="text-indigo-400">
+              Agent is waiting for your reply
+            </span>
+            <span v-else-if="activeToolCall">
               {{ activeToolCall.participantId }} is using
               <span class="font-mono">{{ activeToolCall.toolName }}</span>...
             </span>
@@ -128,7 +146,7 @@ watch(currentMessages, async () => {
         </div>
 
         <MessageInput
-          :disabled="agentWorking || !activeTarget"
+          :disabled="agentWorking && awaitingAgentResponseConvId !== activeConversationKey"
           @send="handleSend"
         />
       </template>

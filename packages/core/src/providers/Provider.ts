@@ -182,8 +182,7 @@ export interface ProviderConfig {
    * The SDK adapter to use.
    * - 'anthropic'         — Anthropic SDK
    * - 'openai'            — OpenAI SDK (official endpoints)
-   * - 'openrouter'        — OpenAI SDK + OpenRouter base URL / model listing
-   * - 'openai-compatible' — OpenAI SDK with a custom baseUrl (llama.cpp, vLLM, etc.)
+   * - 'openrouter'        — OpenAI SDK + OpenRouter base URL / model listing   * - 'github-models'     — OpenAI-compatible API via GitHub Models (PAT with models:read)   * - 'openai-compatible' — OpenAI SDK with a custom baseUrl (llama.cpp, vLLM, etc.)
    *
    * Falls back to `provider` for backward compatibility.
    */

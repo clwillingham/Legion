@@ -58,6 +58,13 @@ const activeToolCall = ref<{ participantId: string; toolName: string } | null>(n
 /** The currently selected conversation key (e.g. "user__my-agent"). */
 const activeConversationKey = ref<string | null>(null);
 
+/**
+ * When an agent initiates a message to the user, this holds the conversationId
+ * ("agentId__userId") that WebRuntime is blocked on — the user must respond
+ * via respondToAgent() before the agent can continue.
+ */
+const awaitingAgentResponseConvId = ref<string | null>(null);
+
 // Track the current send target so we can attribute the response
 let lastSendTarget: string | null = null;
 
@@ -125,9 +132,24 @@ function registerWSHandler() {
           a => a.requestId !== data['requestId'],
         );
         break;
-      case 'agent:message':
-        // Agent-initiated message to user — display it
+      case 'agent:message': {
+        // Agent initiated a conversation with the user.
+        // conversationId is "agentId__userId" (agent is initiator, user is target).
+        const convKey = data['conversationId'] as string;
+        const fromId = data['fromParticipantId'] as string;
+        // Add the agent's message to the map (agent is the 'user' role in this conv)
+        addMessage(convKey, {
+          role: 'user',
+          participantId: fromId,
+          content: data['message'] as string,
+          timestamp: msg.timestamp,
+        });
+        // Switch the active conversation to this one so the user sees it
+        activeConversationKey.value = convKey;
+        // Mark that WebRuntime is waiting for the user's response
+        awaitingAgentResponseConvId.value = convKey;
         break;
+      }
       case 'send:result': {
         // session.send() completed — extract the agent's response from RuntimeResult
         const result = data as Record<string, unknown>;
@@ -191,18 +213,9 @@ export function useSession() {
       );
       activeConversationKey.value = `${sorted[0].initiatorId}__${sorted[0].targetId}`;
     }
-    // Detect if the agent is likely still working:
-    // If the last message in the active conversation was from the user,
-    // the agent hasn't responded yet — show the working indicator.
-    if (activeConversationKey.value) {
-      const msgs = messages.get(activeConversationKey.value);
-      if (msgs && msgs.length > 0) {
-        const lastMsg = msgs[msgs.length - 1];
-        if (lastMsg.role === 'user') {
-          agentWorking.value = true;
-        }
-      }
-    }
+    // Do NOT infer agentWorking from message history — it causes the "thinking forever"
+    // bug when a session ended in a bad state. agentWorking is driven only by real-time
+    // WebSocket events (message:received, send:result, error) and sendMessage().
   }
 
   function setActiveConversation(key: string) {
@@ -264,11 +277,28 @@ export function useSession() {
   }
 
   function respondToAgent(conversationId: string, message: string) {
+    // Add user's reply to the local messages map optimistically
+    // (user is the target in an agent-initiated conv, so role is 'assistant')
+    addMessage(conversationId, {
+      role: 'assistant',
+      participantId: 'user',
+      content: message,
+      timestamp: new Date().toISOString(),
+    });
+    // WebRuntime is no longer waiting
+    awaitingAgentResponseConvId.value = null;
     send({
       type: 'user:response',
       conversationId,
       message,
     });
+  }
+
+  /** Expose ensureConversation so views can guarantee the Map entry exists. */
+  function ensureConversation(key: string) {
+    if (!messages.has(key)) {
+      messages.set(key, []);
+    }
   }
 
   return {
@@ -281,10 +311,12 @@ export function useSession() {
     agentWorking,
     activeToolCall,
     activeConversationKey,
+    awaitingAgentResponseConvId,
     loadSession,
     loadAllSessions,
     loadConversations,
     setActiveConversation,
+    ensureConversation,
     createSession,
     switchSession,
     sendMessage,

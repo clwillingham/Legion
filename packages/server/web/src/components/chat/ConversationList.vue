@@ -8,6 +8,8 @@ const props = defineProps<{
   messages: Map<string, Message[]>;
   activeKey: string | null;
   agents: { id: string; name: string }[];
+  /** If set, this conversation key is waiting for the user to reply to an agent. */
+  awaitingResponseKey?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -24,17 +26,18 @@ interface ConversationEntry {
   lastMessage?: string;
   lastTime?: string;
   messageCount: number;
+  /** True when the agent initiated this conversation and is waiting for the user. */
+  awaitingResponse: boolean;
 }
 
 const entries = computed<ConversationEntry[]>(() => {
   const result: ConversationEntry[] = [];
 
   // Build entries from conversations loaded from the session.
-  // Only show user-initiated conversations (user can interact with these).
   for (const conv of props.conversations) {
-    if (conv.initiatorId !== 'user') continue;
     const key = `${conv.initiatorId}__${conv.targetId}`;
-    const agentId = conv.targetId;
+    // Determine which side is the agent
+    const agentId = conv.initiatorId === 'user' ? conv.targetId : conv.initiatorId;
     const agent = props.agents.find(a => a.id === agentId);
     const msgs = props.messages.get(key) ?? conv.messages ?? [];
     const last = msgs[msgs.length - 1];
@@ -45,19 +48,18 @@ const entries = computed<ConversationEntry[]>(() => {
       lastMessage: last?.content,
       lastTime: last?.timestamp ?? conv.createdAt,
       messageCount: msgs.length,
+      awaitingResponse: props.awaitingResponseKey === key,
     });
   }
 
   // Include any conversations that exist only in the messages map
   // (created during this session but not yet loaded from server).
-  // Only include user-initiated conversations.
   for (const [key, msgs] of props.messages) {
     if (result.find(e => e.key === key)) continue;
-    // Key format: initiatorId__targetId — only show user conversations
-    if (!key.startsWith('user__')) continue;
     const parts = key.split('__');
     if (parts.length < 2) continue;
-    const agentId = parts[1];
+    // Works for both user__agentId and agentId__user keys
+    const agentId = parts[0] === 'user' ? parts[1] : parts[0];
     const agent = props.agents.find(a => a.id === agentId);
     const last = msgs[msgs.length - 1];
     result.push({
@@ -67,6 +69,7 @@ const entries = computed<ConversationEntry[]>(() => {
       lastMessage: last?.content,
       lastTime: last?.timestamp,
       messageCount: msgs.length,
+      awaitingResponse: props.awaitingResponseKey === key,
     });
   }
 
@@ -75,7 +78,7 @@ const entries = computed<ConversationEntry[]>(() => {
   if (props.activeKey && !result.find(e => e.key === props.activeKey)) {
     const parts = props.activeKey.split('__');
     if (parts.length >= 2) {
-      const agentId = parts[1];
+      const agentId = parts[0] === 'user' ? parts[1] : parts[0];
       const agent = props.agents.find(a => a.id === agentId);
       result.push({
         key: props.activeKey,
@@ -84,6 +87,7 @@ const entries = computed<ConversationEntry[]>(() => {
         lastMessage: undefined,
         lastTime: undefined,
         messageCount: 0,
+        awaitingResponse: props.awaitingResponseKey === props.activeKey,
       });
     }
   }
@@ -179,9 +183,16 @@ function truncate(text: string, maxLen: number): string {
           <span class="text-sm font-medium text-gray-200 truncate">
             {{ entry.agentName }}
           </span>
-          <span v-if="entry.lastTime" class="text-xs text-gray-600 shrink-0 ml-2">
-            {{ formatTime(entry.lastTime) }}
-          </span>
+          <div class="flex items-center gap-1.5 shrink-0 ml-2">
+            <span
+              v-if="entry.awaitingResponse"
+              class="text-xs bg-indigo-600 text-white px-1.5 py-0.5 rounded-full leading-none"
+              title="Agent is waiting for your reply"
+            >reply</span>
+            <span v-if="entry.lastTime" class="text-xs text-gray-600">
+              {{ formatTime(entry.lastTime) }}
+            </span>
+          </div>
         </div>
         <div v-if="entry.lastMessage" class="text-xs text-gray-500 mt-0.5 truncate">
           {{ truncate(entry.lastMessage, 60) }}
