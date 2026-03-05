@@ -244,6 +244,7 @@ export type {
   ProcessState,
   ProcessMode,
   RegisterProcessOptions,
+  ProcessOutputCallback,
 } from './process/ProcessRegistry.js';
 export {
   processExecTool,

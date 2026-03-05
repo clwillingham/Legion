@@ -20,6 +20,11 @@ export function emitProcessEvent(
 ): void;
 export function emitProcessEvent(
   context: RuntimeContext,
+  type: 'process:output',
+  data: { processId: number; output: string; stream: 'stdout' | 'stderr' },
+): void;
+export function emitProcessEvent(
+  context: RuntimeContext,
   type: 'process:completed',
   data: { processId: number; command: string; exitCode: number | null; signal: string | null; durationMs: number; mode: 'sync' | 'background' },
 ): void;
@@ -30,7 +35,7 @@ export function emitProcessEvent(
 ): void;
 export function emitProcessEvent(
   context: RuntimeContext,
-  type: 'process:started' | 'process:completed' | 'process:error',
+  type: 'process:started' | 'process:output' | 'process:completed' | 'process:error',
   data: Record<string, unknown>,
 ): void {
   try {
@@ -50,6 +55,15 @@ export function emitProcessEvent(
         command: data.command as string,
         label: data.label as string | undefined,
         mode: data.mode as 'sync' | 'background',
+        timestamp: new Date(),
+      });
+    } else if (type === 'process:output') {
+      eventBus.emit({
+        type: 'process:output',
+        sessionId,
+        processId: data.processId as number,
+        output: data.output as string,
+        stream: data.stream as 'stdout' | 'stderr',
         timestamp: new Date(),
       });
     } else if (type === 'process:completed') {

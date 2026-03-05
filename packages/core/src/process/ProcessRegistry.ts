@@ -72,6 +72,16 @@ export interface ProcessEntry {
 }
 
 /**
+ * Callback invoked when a process produces output.
+ * Receives the raw chunk and the stream it came from.
+ */
+export type ProcessOutputCallback = (
+  processId: number,
+  chunk: string,
+  stream: 'stdout' | 'stderr',
+) => void;
+
+/**
  * Options for registering a new process.
  */
 export interface RegisterProcessOptions {
@@ -92,6 +102,9 @@ export interface RegisterProcessOptions {
 
   /** Execution mode: sync (process_exec) or background (process_start). Defaults to 'background'. */
   mode?: ProcessMode;
+
+  /** Optional callback invoked when the process produces output. */
+  onOutput?: ProcessOutputCallback;
 }
 
 // ── Constants ───────────────────────────────────────────────────
@@ -133,7 +146,7 @@ export class ProcessRegistry {
       );
     }
 
-    const { handle, command, cwd, label, useProcessGroup = false, mode = 'background' } = options;
+    const { handle, command, cwd, label, useProcessGroup = false, mode = 'background', onOutput } = options;
 
     const processId = this.nextId++;
     const output = new OutputBuffer(this.maxOutputLines);
@@ -156,11 +169,15 @@ export class ProcessRegistry {
 
     // Wire up stdout/stderr capture
     handle.stdout?.on('data', (chunk: Buffer) => {
-      output.append(chunk.toString('utf-8'));
+      const text = chunk.toString('utf-8');
+      output.append(text);
+      onOutput?.(processId, text, 'stdout');
     });
 
     handle.stderr?.on('data', (chunk: Buffer) => {
-      output.append(chunk.toString('utf-8'));
+      const text = chunk.toString('utf-8');
+      output.append(text);
+      onOutput?.(processId, text, 'stderr');
     });
 
     // Handle process exit

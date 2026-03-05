@@ -1,7 +1,7 @@
 # Phase 4: Web Interface — Design Document
 
 **Created**: March 3, 2026
-**Status**: Milestones 4.1, 4.2, and 4.3 complete
+**Status**: Milestones 4.1, 4.2, 4.3, 4.4, and 4.5 complete
 
 ---
 
@@ -25,7 +25,7 @@ packages/server/                     # @legion-collective/server
 │   ├── server.ts                    # Fastify instance setup, plugin registration
 │   ├── routes/
 │   │   ├── collective.ts            # GET/POST/PUT /api/collective/||participants
-│   │   ├── sessions.ts             # GET/POST /api/sessions, GET /api/sessions/:id/*
+│   │   ├── sessions.ts             # GET/POST /api/sessions, POST /:id/activate, GET /:id/*
 │   │   ├── messages.ts             # GET /api/conversations/:id/messages, POST /api/sessions/:id/send
 │   │   ├── approvals.ts            # POST /api/approvals/:id/respond
 │   │   ├── processes.ts            # GET/POST /api/processes, POST /api/processes/:id/stop
@@ -56,7 +56,8 @@ packages/server/                     # @legion-collective/server
 │   │   │   └── useProcesses.ts      # Process state + output buffers
 │   │   ├── components/
 │   │   │   ├── chat/
-│   │   │   │   ├── ChatPanel.vue
+│   │   │   │   ├── ChatPanel.vue           # Two-column: ConversationList + messages
+│   │   │   │   ├── ConversationList.vue    # Conversation sidebar with agent picker
 │   │   │   │   ├── MessageBubble.vue
 │   │   │   │   ├── MessageInput.vue
 │   │   │   │   ├── ToolCallBlock.vue
@@ -604,7 +605,7 @@ State lives in module-scoped composables — each is called once at the app root
 composables/
 ├── useWebSocket.ts   — WS connection, message dispatch, onMessage subscription
 ├── useApi.ts         — REST API client (fetch wrappers)
-├── useSession.ts     — active session, conversations, messages (subscribes to WS events)
+├── useSession.ts     — sessions, conversations, messages, activeConversationKey (subscribes to WS events)
 ├── useCollective.ts  — participants state, CRUD actions, authorization types
 ├── useTools.ts       — tool execution gateway (list + execute via ToolRegistry)
 └── useProcesses.ts   — tracked processes, output buffers (subscribes to WS process events)
@@ -650,7 +651,7 @@ const routes = [
 12. ✅ `WebRuntime` implementation
 13. ✅ Web approval handler (delegates to WS client)
 14. ✅ `legion serve` CLI command (dynamic import, optional dependency)
-15. ✅ Unit + integration tests (22 server tests, 377 total)
+15. ✅ Unit + integration tests (21 server tests, 381 monorepo tests + 162 web tests)
 
 ### 4.2: Vue Chat Panel ✅
 
@@ -666,7 +667,7 @@ const routes = [
 8. ✅ Agent activity indicators (loading/typing states, tool call display)
 9. ⬚ Multi-conversation tabs — deferred (single conversation view works)
 10. ✅ `@fastify/static` serves built SPA
-11. ✅ Component + composable tests (112 tests via Vitest + Vue Test Utils + happy-dom)
+11. ✅ Component + composable tests (162 tests via Vitest + Vue Test Utils + happy-dom)
 
 ### 4.3: Collective Management UI ✅
 
@@ -694,19 +695,31 @@ const routes = [
 12. ✅ `tool-categories.ts` utility — known tool names, categories, default modes
 13. ✅ Tests: 63 collective component tests (ParticipantCard 17, AgentForm 20, ToolPolicyEditor 12, ApprovalAuthorityEditor 14) + 5 tool route server tests
 
-### 4.4: Session Dashboard
+### 4.4: Session Dashboard + Conversation-Aware Chat ✅
 
-1. Session list with status
-2. Create new session
-3. Resume existing session
-4. Session details view
+**Goal**: Multi-conversation chat with session management — conversations are first-class, sessions can be created and switched.
 
-### 4.5: Process Management UI
+1. ✅ `useSession` expanded — `activeConversationKey`, `createSession()`, `switchSession()`, `loadAllSessions()`, `allSessions` ref
+2. ✅ `POST /api/sessions/:id/activate` — resumes session from storage and makes it the active session
+3. ✅ `ConversationList` component — conversation sidebar sorted by recency, agent picker for new conversations, last message preview
+4. ✅ `ChatPanel` restructured — two-column layout (ConversationList + messages), messages bound to `activeConversationKey`
+5. ✅ `MessageInput` simplified — removed target `<select>`, target determined by active conversation
+6. ✅ `SessionsView` enhanced — "New Session" button, "Open" button on each session card, navigates to /chat after switch
+7. ✅ `ChatView` reads `:conversationId` route param for deep linking
+8. ✅ Tests: 11 ConversationList tests, 8 ChatPanel tests, 9 MessageInput tests, 4 session activation server tests
 
-1. Process list with status indicators
-2. Real-time output streaming (via WS process events)
-3. Stop/restart buttons
-4. ~~Interactive process input~~ — deferred to Phase 6
+### 4.5: Process Management UI ✅
+
+**Goal**: Real-time process monitoring — split-panel view with process list and streaming output viewer.
+
+1. ✅ `ProcessRegistry.register()` — added `onOutput` callback for stream-level output notification
+2. ✅ `process:output` event emission — wired into both `process_exec` and `process_start` tools via `emitProcessEvent()`
+3. ✅ `useProcesses` composable expanded — `selectedProcessId`, `processOutput` (Record for Vue reactivity), `selectProcess()`, `loadProcessOutput()`, `startProcess()` via tool gateway, real-time `process:output` WS listener
+4. ✅ `ProcessList` component — sorted list (running first, then by recency), status dot indicators (animated pulse for running), stop button per running process, "Running only" filter with count badge, `+` button to start new processes, PID/command/time display
+5. ✅ `ProcessOutput` component — streaming output viewer with auto-scroll, metadata bar (PID, mode, line count, byte size, duration, exit code), stop button, auto-scroll toggle
+6. ✅ `ProcessesView` restructured — two-column layout: ProcessList sidebar (w-72) + ProcessOutput viewer, start process form (command + label inputs), empty state for both no processes and no selection
+7. ✅ Tests: 18 ProcessList tests, 13 ProcessOutput tests, 6 ProcessesView tests (37 total)
+8. ~~Interactive process input~~ — deferred to Phase 6
 
 ### 4.6: Workspace File Explorer
 

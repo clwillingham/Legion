@@ -125,6 +125,72 @@ describe('LegionServer REST API', () => {
     });
   });
 
+  describe('POST /api/sessions', () => {
+    it('should create a new session and make it active', async () => {
+      const originalId = server.session!.data.id;
+      const response = await server.app.inject({
+        method: 'POST',
+        url: '/api/sessions',
+        payload: { name: 'Test Session' },
+      });
+      expect(response.statusCode).toBe(201);
+      const body = response.json();
+      expect(body.name).toBe('Test Session');
+      expect(body.id).not.toBe(originalId);
+      // Should now be the active session
+      expect(server.session!.data.id).toBe(body.id);
+    });
+  });
+
+  describe('POST /api/sessions/:id/activate', () => {
+    it('should activate the current session (no-op)', async () => {
+      const sessionId = server.session!.data.id;
+      const response = await server.app.inject({
+        method: 'POST',
+        url: `/api/sessions/${sessionId}/activate`,
+        payload: {},
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().id).toBe(sessionId);
+    });
+
+    it('should switch to a different session', async () => {
+      // Create a second session
+      const createRes = await server.app.inject({
+        method: 'POST',
+        url: '/api/sessions',
+        payload: { name: 'Second Session' },
+      });
+      const secondId = createRes.json().id;
+
+      // Create a third session (this becomes active)
+      await server.app.inject({
+        method: 'POST',
+        url: '/api/sessions',
+        payload: { name: 'Third Session' },
+      });
+
+      // Now activate the second session
+      const response = await server.app.inject({
+        method: 'POST',
+        url: `/api/sessions/${secondId}/activate`,
+        payload: {},
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().id).toBe(secondId);
+      expect(server.session!.data.id).toBe(secondId);
+    });
+
+    it('should return 404 for unknown session', async () => {
+      const response = await server.app.inject({
+        method: 'POST',
+        url: '/api/sessions/nonexistent-session-id/activate',
+        payload: {},
+      });
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
   describe('GET /api/processes', () => {
     it('should return empty process list', async () => {
       const response = await server.app.inject({

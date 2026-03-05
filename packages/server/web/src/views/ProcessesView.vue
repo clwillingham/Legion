@@ -1,47 +1,143 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useProcesses } from '../composables/useProcesses.js';
+import ProcessList from '../components/processes/ProcessList.vue';
+import ProcessOutput from '../components/processes/ProcessOutput.vue';
 
-const { processes, loadProcesses, stopProcess } = useProcesses();
+const {
+  processes,
+  selectedProcessId,
+  processOutput,
+  loadProcesses,
+  stopProcess,
+  startProcess,
+  selectProcess,
+} = useProcesses();
 
 onMounted(() => loadProcesses());
+
+const selectedProcess = computed(() => {
+  if (selectedProcessId.value === null) return null;
+  return processes.value.find(p => p.processId === selectedProcessId.value) ?? null;
+});
+
+const selectedOutput = computed(() => {
+  if (selectedProcessId.value === null) return '';
+  return processOutput.value[selectedProcessId.value] ?? '';
+});
+
+// Start process form
+const showStartForm = ref(false);
+const startCommand = ref('');
+const startLabel = ref('');
+const startError = ref('');
+const starting = ref(false);
+
+function openStartForm() {
+  showStartForm.value = true;
+  startCommand.value = '';
+  startLabel.value = '';
+  startError.value = '';
+}
+
+async function handleStart() {
+  if (!startCommand.value.trim()) return;
+  starting.value = true;
+  startError.value = '';
+  const result = await startProcess(startCommand.value.trim(), startLabel.value.trim() || undefined);
+  starting.value = false;
+  if (result.error) {
+    startError.value = result.error;
+  } else {
+    showStartForm.value = false;
+    // Auto-select the new process once it appears
+    if (result.processId) {
+      selectProcess(result.processId);
+    }
+  }
+}
+
+function handleStartKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleStart();
+  } else if (e.key === 'Escape') {
+    showStartForm.value = false;
+  }
+}
 </script>
 
 <template>
-  <div class="p-6">
-    <h2 class="text-xl font-bold mb-4">Processes</h2>
-    <div class="space-y-2">
-      <div
-        v-for="p in processes"
-        :key="p.processId"
-        class="bg-gray-800 border border-gray-700 rounded-lg p-4"
-      >
-        <div class="flex items-center justify-between mb-1">
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-mono text-gray-400">#{{ p.processId }}</span>
-            <span v-if="p.label" class="text-sm text-gray-300">{{ p.label }}</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span
-              class="text-xs px-2 py-0.5 rounded-full"
-              :class="p.state === 'running' ? 'bg-green-900 text-green-400' : 'bg-gray-700 text-gray-400'"
-            >{{ p.state }}</span>
-            <button
-              v-if="p.state === 'running'"
-              class="text-xs px-2 py-0.5 bg-red-800 hover:bg-red-700 text-red-300 rounded transition-colors"
-              @click="stopProcess(p.processId)"
-            >Stop</button>
-          </div>
+  <div class="flex h-full">
+    <!-- Process list sidebar -->
+    <div class="w-72 border-r border-gray-700 flex-shrink-0">
+      <ProcessList
+        :processes="processes"
+        :selected-id="selectedProcessId"
+        @select="selectProcess"
+        @stop="stopProcess"
+        @start="openStartForm"
+      />
+    </div>
+
+    <!-- Main area -->
+    <div class="flex-1 min-w-0 flex flex-col">
+      <!-- Start process form (overlay at top) -->
+      <div v-if="showStartForm" class="border-b border-gray-700 bg-gray-900 p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-medium text-gray-200">Start Process</h3>
+          <button
+            type="button"
+            class="text-gray-500 hover:text-gray-300 transition-colors text-sm"
+            @click="showStartForm = false"
+          >Cancel</button>
         </div>
-        <div class="text-sm text-gray-500 font-mono truncate">{{ p.command }}</div>
-        <div class="text-xs text-gray-600 mt-1">
-          PID: {{ p.pid }} · Started: {{ new Date(p.startedAt).toLocaleTimeString() }}
-          <span v-if="p.exitCode !== null"> · Exit: {{ p.exitCode }}</span>
+        <div class="space-y-2">
+          <input
+            v-model="startCommand"
+            type="text"
+            placeholder="Command (e.g. npm run dev)"
+            class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-200 font-mono
+                   focus:outline-none focus:border-gray-500 placeholder-gray-600"
+            autofocus
+            @keydown="handleStartKeydown"
+          />
+          <input
+            v-model="startLabel"
+            type="text"
+            placeholder="Label (optional, e.g. dev-server)"
+            class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-300
+                   focus:outline-none focus:border-gray-500 placeholder-gray-600"
+            @keydown="handleStartKeydown"
+          />
+          <div v-if="startError" class="text-xs text-red-400">{{ startError }}</div>
+          <button
+            type="button"
+            class="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white text-sm rounded transition-colors disabled:opacity-50"
+            :disabled="!startCommand.trim() || starting"
+            @click="handleStart"
+          >
+            {{ starting ? 'Starting...' : 'Start' }}
+          </button>
         </div>
       </div>
-    </div>
-    <div v-if="processes.length === 0" class="text-gray-600 text-sm">
-      No tracked processes.
+
+      <!-- Output viewer -->
+      <div class="flex-1 min-h-0">
+        <ProcessOutput
+          v-if="selectedProcess"
+          :process="selectedProcess"
+          :output="selectedOutput"
+          @stop="stopProcess"
+        />
+        <div v-else class="flex items-center justify-center h-full text-gray-600 text-sm">
+          <div class="text-center">
+            <div class="text-2xl mb-2">⚙️</div>
+            <div v-if="processes.length > 0">Select a process to view its output</div>
+            <div v-else>No tracked processes.</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>

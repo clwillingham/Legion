@@ -47,12 +47,16 @@ export interface ApprovalRequest {
 
 // ── Shared singleton state ──────────────────────────────────────────
 const session = ref<SessionData | null>(null);
+const allSessions = ref<SessionData[]>([]);
 const conversations = ref<ConversationData[]>([]);
 const messages = reactive<Map<string, Message[]>>(new Map());
 const pendingApprovals = ref<ApprovalRequest[]>([]);
 const loading = ref(false);
 const agentWorking = ref(false);
 const activeToolCall = ref<{ participantId: string; toolName: string } | null>(null);
+
+/** The currently selected conversation key (e.g. "user__my-agent"). */
+const activeConversationKey = ref<string | null>(null);
 
 // Track the current send target so we can attribute the response
 let lastSendTarget: string | null = null;
@@ -158,10 +162,14 @@ export function useSession() {
   // Ensure the WS handler is registered exactly once
   registerWSHandler();
 
+  async function loadAllSessions() {
+    allSessions.value = await api.get<SessionData[]>('/sessions');
+  }
+
   async function loadSession() {
-    const sessions = await api.get<SessionData[]>('/sessions');
-    if (sessions.length > 0) {
-      session.value = sessions[0];
+    await loadAllSessions();
+    if (allSessions.value.length > 0) {
+      session.value = allSessions.value[0];
       await loadConversations();
     }
   }
@@ -171,16 +179,73 @@ export function useSession() {
     conversations.value = await api.get<ConversationData[]>(
       `/sessions/${session.value.id}/conversations`,
     );
+    // Populate messages map from loaded conversations
     for (const conv of conversations.value) {
       const key = `${conv.initiatorId}__${conv.targetId}`;
       messages.set(key, conv.messages ?? []);
     }
+    // Auto-select most recent conversation if nothing is selected
+    if (!activeConversationKey.value && conversations.value.length > 0) {
+      const sorted = [...conversations.value].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      activeConversationKey.value = `${sorted[0].initiatorId}__${sorted[0].targetId}`;
+    }
+    // Detect if the agent is likely still working:
+    // If the last message in the active conversation was from the user,
+    // the agent hasn't responded yet — show the working indicator.
+    if (activeConversationKey.value) {
+      const msgs = messages.get(activeConversationKey.value);
+      if (msgs && msgs.length > 0) {
+        const lastMsg = msgs[msgs.length - 1];
+        if (lastMsg.role === 'user') {
+          agentWorking.value = true;
+        }
+      }
+    }
+  }
+
+  function setActiveConversation(key: string) {
+    activeConversationKey.value = key;
+  }
+
+  async function createSession(name?: string): Promise<SessionData> {
+    const newSession = await api.post<SessionData>('/sessions', name ? { name } : {});
+    session.value = newSession;
+    // Clear old conversation state
+    conversations.value = [];
+    messages.clear();
+    activeConversationKey.value = null;
+    pendingApprovals.value = [];
+    agentWorking.value = false;
+    activeToolCall.value = null;
+    // Refresh session list
+    await loadAllSessions();
+    return newSession;
+  }
+
+  async function switchSession(id: string) {
+    // Activate session on server, then reload
+    await api.post(`/sessions/${id}/activate`, {});
+    // Fetch the session data
+    const sessionData = await api.get<SessionData>(`/sessions/${id}`);
+    session.value = sessionData;
+    // Clear and reload conversation state
+    conversations.value = [];
+    messages.clear();
+    activeConversationKey.value = null;
+    pendingApprovals.value = [];
+    agentWorking.value = false;
+    activeToolCall.value = null;
+    await loadConversations();
   }
 
   async function sendMessage(target: string, message: string, conversation?: string) {
     if (!session.value) return;
     agentWorking.value = true;
     lastSendTarget = target;
+    // Ensure active conversation is set to the target
+    activeConversationKey.value = `user__${target}`;
     send({
       type: 'send',
       target,
@@ -208,14 +273,20 @@ export function useSession() {
 
   return {
     session,
+    allSessions,
     conversations,
     messages,
     pendingApprovals,
     loading,
     agentWorking,
     activeToolCall,
+    activeConversationKey,
     loadSession,
+    loadAllSessions,
     loadConversations,
+    setActiveConversation,
+    createSession,
+    switchSession,
     sendMessage,
     respondToApproval,
     respondToAgent,

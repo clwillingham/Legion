@@ -152,6 +152,9 @@ export const processExecTool: Tool = {
         label: undefined,
         useProcessGroup: false,
         mode: 'sync',
+        onOutput: (pid, chunk, stream) => {
+          emitProcessEvent(context, 'process:output', { processId: pid, output: chunk, stream });
+        },
       });
 
       // Emit process:started event
@@ -371,6 +374,9 @@ export const processStartTool: Tool = {
         label,
         useProcessGroup: true,
         mode: 'background',
+        onOutput: (pid, chunk, stream) => {
+          emitProcessEvent(context, 'process:output', { processId: pid, output: chunk, stream });
+        },
       });
 
       const entry = registry.get(processId)!;

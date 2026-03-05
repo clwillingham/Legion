@@ -56,7 +56,7 @@ export class LegionServer {
     ProcessRegistry.setInstance(this.processRegistry);
 
     const approvalLog = new ApprovalLog(this.workspace.storage.scope('sessions'));
-    this.authEngine = new AuthEngine({ approvalLog });
+    this.authEngine = new AuthEngine({ approvalLog, eventBus: this.workspace.eventBus });
 
     this.fastify = Fastify({ logger: false });
   }
@@ -116,23 +116,12 @@ export class LegionServer {
     this.workspace.runtimeRegistry.register('agent', () => new AgentRuntime());
     this.workspace.runtimeRegistry.register('mock', () => new MockRuntime());
 
-    // Set up web approval handler — delegates approvals to browser via WebSocket
+    // Set up web approval handler — delegates approvals to browser via WebSocket.
+    // The approval:requested event is already emitted by AuthEngine via the EventBus,
+    // which the EventBus→WS bridge forwards to all connected clients.
+    // We only need to register the response handler here.
     this.authEngine.setApprovalHandler((request) => {
       return new Promise((resolve) => {
-        this.wsManager.broadcast(JSON.stringify({
-          type: 'approval:requested',
-          data: {
-            type: 'approval:requested' as const,
-            sessionId: this._session?.data.id ?? '',
-            participantId: request.participantId,
-            toolName: request.toolName,
-            arguments: request.arguments,
-            requestId: request.id,
-            timestamp: new Date(),
-          },
-          timestamp: new Date().toISOString(),
-        }));
-
         this.approvalResponseHandler = (requestId, approved, reason) => {
           if (requestId === request.id) {
             this.approvalResponseHandler = null;

@@ -9,7 +9,9 @@ const { session } = useSession();
 <template>
   <header class="h-12 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-4">
     <div class="text-sm text-gray-400">
-      <span v-if="session">Session: <span class="text-gray-200">{{ session.name }}</span></span>
+      <span v-if="session">
+        Session: <span class="text-gray-200">{{ session.name }}</span>
+      </span>
     </div>
     <div class="flex items-center gap-2">
       <span

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 
@@ -36,14 +36,31 @@ beforeAll(() => {
   lastCreatedWS.onopen!();
 });
 
+beforeEach(() => {
+  const { activeConversationKey, agentWorking, activeToolCall } = useSession();
+  // Set a default conversation so the messages area renders
+  activeConversationKey.value = 'user__ur-agent';
+  agentWorking.value = false;
+  activeToolCall.value = null;
+});
+
 function simulateWSMessage(msg: object) {
   lastCreatedWS.onmessage!({ data: JSON.stringify(msg) });
 }
 
 describe('ChatPanel', () => {
-  it('renders empty state when no messages', () => {
+  it('renders empty state message when conversation has no messages', () => {
     const wrapper = mount(ChatPanel);
-    expect(wrapper.text()).toContain('Send a message to start a conversation');
+    expect(wrapper.text()).toContain('Send a message to start the conversation');
+  });
+
+  it('renders "Select a conversation" when no conversation is active', async () => {
+    const { activeConversationKey } = useSession();
+    activeConversationKey.value = null;
+    const wrapper = mount(ChatPanel);
+    await nextTick();
+
+    expect(wrapper.text()).toContain('Select a conversation or start a new one');
   });
 
   it('renders a user message when message:sent event arrives', async () => {
@@ -105,5 +122,16 @@ describe('ChatPanel', () => {
 
     // Cleanup
     agentWorking.value = false;
+  });
+
+  it('renders conversation list sidebar', () => {
+    const wrapper = mount(ChatPanel);
+    expect(wrapper.text()).toContain('Conversations');
+  });
+
+  it('shows conversation header with agent name', () => {
+    const wrapper = mount(ChatPanel);
+    // Active key is user__ur-agent, agent name fallback is the id
+    expect(wrapper.text()).toContain('Chatting with');
   });
 });

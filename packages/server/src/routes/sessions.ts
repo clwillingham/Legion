@@ -101,6 +101,30 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { workspace:
     };
   });
 
+  fastify.post('/sessions/:id/activate', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const server = getServer();
+
+    // If already active, nothing to do
+    const current = server.session;
+    if (current && current.data.id === id) {
+      return current.data;
+    }
+
+    const session = await Session.resume(
+      id,
+      workspace.storage,
+      workspace.runtimeRegistry,
+      workspace.collective,
+      workspace.eventBus,
+    );
+    if (!session) {
+      return reply.code(404).send({ error: `Session not found: ${id}` });
+    }
+    server.setSession(session);
+    return session.data;
+  });
+
   fastify.post('/sessions/:id/send', async (request, reply) => {
     const { id } = request.params as { id: string };
     const { target, message, conversation } = request.body as {
