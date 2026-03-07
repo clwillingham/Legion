@@ -90,6 +90,9 @@ export interface RuntimeResult {
     /** The individual tool calls awaiting a decision. */
     requests: PendingApprovalRequest[];
   };
+
+  /** If true, the runtime already appended all messages to the conversation */
+  messagesPersisted?: boolean;
 }
 
 // ============================================================

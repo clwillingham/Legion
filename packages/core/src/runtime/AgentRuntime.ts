@@ -5,7 +5,7 @@ import type { AgentConfig } from '../collective/Participant.js';
 import type { Tool, ToolCallResult } from '../tools/Tool.js';
 import type { ToolDefinition, LLMProvider } from '../providers/Provider.js';
 import { createProvider } from '../providers/ProviderFactory.js';
-import { createMessage, type Message } from '../communication/Message.js';
+import { createMessage } from '../communication/Message.js';
 import { hasAuthority } from '../authorization/authority.js';
 import type { PendingApprovalRequest } from '../authorization/PendingApprovalRegistry.js';
 
@@ -19,6 +19,11 @@ import type { PendingApprovalRequest } from '../authorization/PendingApprovalReg
  * 4. Returning when the LLM produces a text response (no tool calls)
  *
  * The loop is bounded by maxIterations to prevent runaway execution.
+ *
+ * All intermediate messages (assistant messages with tool calls, tool result
+ * messages, and the final text response) are appended to the Conversation via
+ * appendMessage(), which persists them to disk. This means the full message
+ * history is always available for crash recovery or inspection.
  *
  * Approval Authority Delegation (Phase 3.3):
  * When a tool call requires approval and the calling participant has authority
@@ -49,20 +54,9 @@ export class AgentRuntime extends ParticipantRuntime {
       };
     }
 
-    // Build the message history from the conversation.
     // The conversation already has the user message appended by Conversation.send(),
-    // so we use the full conversation history.
-    const workingMessages: Message[] = [...context.conversation.getMessages()];
-
-    return this.runLoop(
-      workingMessages,
-      0,
-      context,
-      agentConfig,
-      runtimeConfig,
-      provider,
-      toolDefinitions,
-    );
+    // so we start the loop directly — it reads messages from the conversation.
+    return this.runLoop(0, context, agentConfig, runtimeConfig, provider, toolDefinitions);
   }
 
   /**
@@ -71,11 +65,13 @@ export class AgentRuntime extends ParticipantRuntime {
    * Extracted so that the `resume` continuation stored in PendingApprovalRegistry
    * can re-enter the loop after pending approvals are resolved.
    *
-   * @param workingMessages     Current message history (includes tool results injected so far)
+   * All intermediate messages are appended to the conversation via appendMessage(),
+   * which persists them to disk. The LLM reads messages from the conversation
+   * at each iteration.
+   *
    * @param startedIterations   Number of iterations already consumed before this call
    */
   async runLoop(
-    workingMessages: Message[],
     startedIterations: number,
     context: RuntimeContext,
     agentConfig: AgentConfig,
@@ -100,8 +96,8 @@ export class AgentRuntime extends ParticipantRuntime {
       });
 
       try {
-        // Call the LLM
-        const response = await provider.chat(workingMessages, {
+        // Call the LLM — read current messages from the conversation
+        const response = await provider.chat([...context.conversation.getMessages()], {
           model: agentConfig.model.model,
           systemPrompt: agentConfig.systemPrompt,
           tools: toolDefinitions.length > 0 ? toolDefinitions : undefined,
@@ -111,14 +107,19 @@ export class AgentRuntime extends ParticipantRuntime {
 
         // No tool calls — the agent is done, return the text response
         if (response.toolCalls.length === 0) {
+          // Persist the final response to the conversation
+          await context.conversation.appendMessage(
+            createMessage('assistant', agentConfig.id, response.content || '(no response)'),
+          );
           return {
             status: 'success',
             response: response.content || '(no response)',
+            messagesPersisted: true,
           };
         }
 
         // The response has tool calls — execute them and feed results back.
-        // First, append the assistant message with tool calls to working history.
+        // First, append the assistant message with tool calls to the conversation (persists to disk).
         const assistantMessage = createMessage(
           'assistant',
           agentConfig.id,
@@ -129,7 +130,7 @@ export class AgentRuntime extends ParticipantRuntime {
             args: tc.arguments,
           })),
         );
-        workingMessages.push(assistantMessage);
+        await context.conversation.appendMessage(assistantMessage);
 
         // ── Categorise tool calls ─────────────────────────────────────────────
         // Map from toolCallId → result (filled as we go, preserving LLM order)
@@ -161,12 +162,7 @@ export class AgentRuntime extends ParticipantRuntime {
 
             if (
               effectivePolicy === 'requires_approval' &&
-              hasAuthority(
-                callerConfig.approvalAuthority,
-                agentConfig.id,
-                toolCall.name,
-                toolArgs,
-              )
+              hasAuthority(callerConfig.approvalAuthority, agentConfig.id, toolCall.name, toolArgs)
             ) {
               // Hold this tool call — the caller will decide
               heldCalls.push({
@@ -216,12 +212,15 @@ export class AgentRuntime extends ParticipantRuntime {
               status: 'approval_required',
               response: response.content || undefined,
               approvalRequest: result.approvalRequest,
+              messagesPersisted: true,
             };
           }
 
           const resultContent =
             result.status === 'success' || result.status === 'approval_required'
-              ? (typeof result.data === 'string' ? result.data : JSON.stringify(result.data))
+              ? typeof result.data === 'string'
+                ? result.data
+                : JSON.stringify(result.data)
               : `Error: ${result.error}`;
 
           resultMap.set(toolCall.id, {
@@ -260,7 +259,6 @@ export class AgentRuntime extends ParticipantRuntime {
           }));
 
           // Capture current loop state for the resume continuation
-          const capturedWorkingMessages = workingMessages;
           const capturedIterations = iterations;
           const capturedResultMap = resultMap;
           const capturedHeldCalls = heldCalls;
@@ -288,7 +286,9 @@ export class AgentRuntime extends ParticipantRuntime {
 
                 const resultContent =
                   toolExecResult.status === 'success'
-                    ? (typeof toolExecResult.data === 'string' ? toolExecResult.data : JSON.stringify(toolExecResult.data))
+                    ? typeof toolExecResult.data === 'string'
+                      ? toolExecResult.data
+                      : JSON.stringify(toolExecResult.data)
                     : `Error: ${toolExecResult.error}`;
 
                 callResult = {
@@ -345,13 +345,13 @@ export class AgentRuntime extends ParticipantRuntime {
               undefined,
               orderedResults,
             );
-            capturedWorkingMessages.push(toolResultMessage);
+            // Append to conversation (persists to disk) instead of local array
+            await context.conversation.appendMessage(toolResultMessage);
 
             // Clear this batch from the registry and continue the loop
             context.pendingApprovalRegistry.clear(conversationId);
 
             return self.runLoop(
-              capturedWorkingMessages,
               capturedIterations,
               context,
               agentConfig,
@@ -376,6 +376,7 @@ export class AgentRuntime extends ParticipantRuntime {
               conversationId,
               requests: pendingRequests,
             },
+            messagesPersisted: true,
           };
         }
 
@@ -399,7 +400,8 @@ export class AgentRuntime extends ParticipantRuntime {
           undefined,
           allToolResults,
         );
-        workingMessages.push(toolResultMessage);
+        // Append to conversation (persists to disk) instead of local array
+        await context.conversation.appendMessage(toolResultMessage);
 
         // Continue the loop — the LLM will see the tool results and decide
         // whether to make more tool calls or produce a final response.
@@ -475,7 +477,7 @@ export class AgentRuntime extends ParticipantRuntime {
     if (!apiKey && !isLocalCompatible) {
       throw new Error(
         `No API key found for provider "${providerName}". ` +
-        `Set it via 'legion config set-provider' or the appropriate environment variable.`,
+          `Set it via 'legion config set-provider' or the appropriate environment variable.`,
       );
     }
 
@@ -490,4 +492,3 @@ export class AgentRuntime extends ParticipantRuntime {
     });
   }
 }
-

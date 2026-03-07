@@ -99,10 +99,7 @@ const callerWithScopedAuthority = {
   approvalAuthority: {
     'coding-agent': {
       file_write: {
-        rules: [
-          { mode: 'auto' as const, scope: { paths: ['src/**'] } },
-          { mode: 'deny' as const },
-        ],
+        rules: [{ mode: 'auto' as const, scope: { paths: ['src/**'] } }, { mode: 'deny' as const }],
       },
     },
   },
@@ -151,6 +148,34 @@ function createTestToolRegistry(tools?: Record<string, () => Promise<unknown>>) 
 
 // ── Context factory ─────────────────────────────────────────────────────────
 
+/**
+ * Create a mock conversation object that stores messages in memory.
+ * The refactored AgentRuntime reads from getMessages() and writes via appendMessage().
+ */
+function createMockConversation(
+  initiatorId: string,
+  targetId: string,
+  name?: string,
+  initialMessages: Message[] = [],
+) {
+  const messages: Message[] = [...initialMessages];
+  return {
+    data: {
+      sessionId: 'test-session',
+      initiatorId,
+      targetId,
+      name,
+      messages,
+      createdAt: '2026-01-01T00:00:00Z',
+    },
+    getMessages: () => messages as ReadonlyArray<Message>,
+    appendMessage: async (msg: Message) => {
+      messages.push(msg);
+    },
+    isBusy: false,
+  };
+}
+
 function createContext(
   overrides: Partial<{
     callingParticipantId: string;
@@ -159,38 +184,45 @@ function createContext(
     authEngine: AuthEngine;
     pendingApprovalRegistry: PendingApprovalRegistry;
     conversationName?: string;
+    initialMessages?: Message[];
   }> = {},
-): RuntimeContext & { conversation: { data: { initiatorId: string; targetId: string; name?: string; sessionId: string } } } {
-  const pendingApprovalRegistry = overrides.pendingApprovalRegistry ?? new PendingApprovalRegistry();
-  const authEngine = overrides.authEngine ?? new AuthEngine({
-    toolPolicies: {
-      file_write: 'requires_approval',
-      process_exec: 'requires_approval',
-      file_read: 'auto',
-    },
-  });
+): RuntimeContext & {
+  conversation: {
+    data: { initiatorId: string; targetId: string; name?: string; sessionId: string };
+  };
+} {
+  const pendingApprovalRegistry =
+    overrides.pendingApprovalRegistry ?? new PendingApprovalRegistry();
+  const authEngine =
+    overrides.authEngine ??
+    new AuthEngine({
+      toolPolicies: {
+        file_write: 'requires_approval',
+        process_exec: 'requires_approval',
+        file_read: 'auto',
+      },
+    });
   const toolRegistry = overrides.toolRegistry ?? createTestToolRegistry();
   const caller = overrides.callerParticipant ?? callerParticipant;
   const conversationName = overrides.conversationName;
 
-  const conversation = {
-    data: {
-      sessionId: 'test-session',
-      initiatorId: caller.id,
-      targetId: codingAgent.id,
-      name: conversationName,
-      messages: [] as Message[],
-      createdAt: '2026-01-01T00:00:00Z',
-    },
-    getMessages: () => [] as ReadonlyArray<Message>,
-    isBusy: false,
-  };
+  const conversation = createMockConversation(
+    caller.id,
+    codingAgent.id,
+    conversationName,
+    overrides.initialMessages,
+  );
 
   return {
     participant: codingAgent,
     conversation: conversation as unknown as RuntimeContext['conversation'],
     session: {
-      data: { id: 'test-session', name: 'Test', createdAt: '2026-01-01T00:00:00Z', status: 'active' },
+      data: {
+        id: 'test-session',
+        name: 'Test',
+        createdAt: '2026-01-01T00:00:00Z',
+        status: 'active',
+      },
       collective: {
         get: (id: string) => {
           if (id === caller.id) return caller;
@@ -201,13 +233,20 @@ function createContext(
     } as unknown as RuntimeContext['session'],
     communicationDepth: 1,
     toolRegistry,
-    config: { get: () => undefined, resolveApiKey: () => 'test-key' } as unknown as RuntimeContext['config'],
+    config: {
+      get: () => undefined,
+      resolveApiKey: () => 'test-key',
+    } as unknown as RuntimeContext['config'],
     eventBus: new EventBus(),
     storage: {} as RuntimeContext['storage'],
     authEngine,
     callingParticipantId: overrides.callingParticipantId ?? caller.id,
     pendingApprovalRegistry,
-  } as unknown as RuntimeContext & { conversation: { data: { initiatorId: string; targetId: string; name?: string; sessionId: string } } };
+  } as unknown as RuntimeContext & {
+    conversation: {
+      data: { initiatorId: string; targetId: string; name?: string; sessionId: string };
+    };
+  };
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -216,28 +255,36 @@ describe('AgentRuntime — caller approval batching', () => {
   it('holds tool calls requiring caller approval and returns approval_required', async () => {
     const registry = new PendingApprovalRegistry();
     const provider = new MockLLMProvider([
-      toolCallResponse([{ id: 'tc-1', name: 'file_write', arguments: { path: 'src/auth.ts', content: 'code' } }]),
+      toolCallResponse([
+        { id: 'tc-1', name: 'file_write', arguments: { path: 'src/auth.ts', content: 'code' } },
+      ]),
     ]);
 
-    const context = createContext({ pendingApprovalRegistry: registry });
+    const context = createContext({
+      pendingApprovalRegistry: registry,
+      initialMessages: [createMessage('user', 'ur-agent', 'Write the auth module')],
+    });
     const runtime = new AgentRuntime();
-    const runtimeConfig = RuntimeConfig.resolve({ get: () => undefined } as unknown as RuntimeContext['config']);
+    const runtimeConfig = RuntimeConfig.resolve({
+      get: () => undefined,
+    } as unknown as RuntimeContext['config']);
 
-    const result = await runtime.runLoop(
-      [createMessage('user', 'ur-agent', 'Write the auth module')],
-      0,
-      context,
-      codingAgent,
-      runtimeConfig,
-      provider,
-      [{ name: 'file_write', description: 'Write a file', parameters: { type: 'object', properties: {} } }],
-    );
+    const result = await runtime.runLoop(0, context, codingAgent, runtimeConfig, provider, [
+      {
+        name: 'file_write',
+        description: 'Write a file',
+        parameters: { type: 'object', properties: {} },
+      },
+    ]);
 
     expect(result.status).toBe('approval_required');
     expect(result.pendingApprovals).toBeDefined();
     expect(result.pendingApprovals!.requests).toHaveLength(1);
     expect(result.pendingApprovals!.requests[0].toolName).toBe('file_write');
-    expect(result.pendingApprovals!.requests[0].toolArguments).toEqual({ path: 'src/auth.ts', content: 'code' });
+    expect(result.pendingApprovals!.requests[0].toolArguments).toEqual({
+      path: 'src/auth.ts',
+      content: 'code',
+    });
 
     // Registry should have the batch stored
     expect(registry.hasPending(result.pendingApprovals!.conversationId)).toBe(true);
@@ -261,22 +308,20 @@ describe('AgentRuntime — caller approval batching', () => {
       ]),
     ]);
 
-    const context = createContext({ pendingApprovalRegistry: registry, toolRegistry });
+    const context = createContext({
+      pendingApprovalRegistry: registry,
+      toolRegistry,
+      initialMessages: [createMessage('user', 'ur-agent', 'Read and update')],
+    });
     const runtime = new AgentRuntime();
-    const runtimeConfig = RuntimeConfig.resolve({ get: () => undefined } as unknown as RuntimeContext['config']);
+    const runtimeConfig = RuntimeConfig.resolve({
+      get: () => undefined,
+    } as unknown as RuntimeContext['config']);
 
-    const result = await runtime.runLoop(
-      [createMessage('user', 'ur-agent', 'Read and update')],
-      0,
-      context,
-      codingAgent,
-      runtimeConfig,
-      provider,
-      [
-        { name: 'file_read', description: 'Read', parameters: { type: 'object', properties: {} } },
-        { name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } },
-      ],
-    );
+    const result = await runtime.runLoop(0, context, codingAgent, runtimeConfig, provider, [
+      { name: 'file_read', description: 'Read', parameters: { type: 'object', properties: {} } },
+      { name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } },
+    ]);
 
     expect(result.status).toBe('approval_required');
     // file_read was executed immediately
@@ -296,22 +341,19 @@ describe('AgentRuntime — caller approval batching', () => {
       ]),
     ]);
 
-    const context = createContext({ pendingApprovalRegistry: registry });
+    const context = createContext({
+      pendingApprovalRegistry: registry,
+      initialMessages: [createMessage('user', 'ur-agent', 'Do multiple things')],
+    });
     const runtime = new AgentRuntime();
-    const runtimeConfig = RuntimeConfig.resolve({ get: () => undefined } as unknown as RuntimeContext['config']);
+    const runtimeConfig = RuntimeConfig.resolve({
+      get: () => undefined,
+    } as unknown as RuntimeContext['config']);
 
-    const result = await runtime.runLoop(
-      [createMessage('user', 'ur-agent', 'Do multiple things')],
-      0,
-      context,
-      codingAgent,
-      runtimeConfig,
-      provider,
-      [
-        { name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } },
-        { name: 'process_exec', description: 'Exec', parameters: { type: 'object', properties: {} } },
-      ],
-    );
+    const result = await runtime.runLoop(0, context, codingAgent, runtimeConfig, provider, [
+      { name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } },
+      { name: 'process_exec', description: 'Exec', parameters: { type: 'object', properties: {} } },
+    ]);
 
     expect(result.status).toBe('approval_required');
     expect(result.pendingApprovals!.requests).toHaveLength(3);
@@ -327,23 +369,24 @@ describe('AgentRuntime — caller approval batching', () => {
   it('resumes execution after approval and continues the loop to completion', async () => {
     const registry = new PendingApprovalRegistry();
     const provider = new MockLLMProvider([
-      toolCallResponse([{ id: 'tc-1', name: 'file_write', arguments: { path: 'src/auth.ts', content: 'code' } }]),
+      toolCallResponse([
+        { id: 'tc-1', name: 'file_write', arguments: { path: 'src/auth.ts', content: 'code' } },
+      ]),
       textResponse('I have written the auth module.'),
     ]);
 
-    const context = createContext({ pendingApprovalRegistry: registry });
+    const context = createContext({
+      pendingApprovalRegistry: registry,
+      initialMessages: [createMessage('user', 'ur-agent', 'Write the auth module')],
+    });
     const runtime = new AgentRuntime();
-    const runtimeConfig = RuntimeConfig.resolve({ get: () => undefined } as unknown as RuntimeContext['config']);
+    const runtimeConfig = RuntimeConfig.resolve({
+      get: () => undefined,
+    } as unknown as RuntimeContext['config']);
 
-    const result = await runtime.runLoop(
-      [createMessage('user', 'ur-agent', 'Write the auth module')],
-      0,
-      context,
-      codingAgent,
-      runtimeConfig,
-      provider,
-      [{ name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } }],
-    );
+    const result = await runtime.runLoop(0, context, codingAgent, runtimeConfig, provider, [
+      { name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } },
+    ]);
 
     expect(result.status).toBe('approval_required');
     const { conversationId, requests } = result.pendingApprovals!;
@@ -371,23 +414,25 @@ describe('AgentRuntime — caller approval batching', () => {
     });
 
     const provider = new MockLLMProvider([
-      toolCallResponse([{ id: 'tc-1', name: 'file_write', arguments: { path: 'src/auth.ts', content: 'code' } }]),
+      toolCallResponse([
+        { id: 'tc-1', name: 'file_write', arguments: { path: 'src/auth.ts', content: 'code' } },
+      ]),
       textResponse('The write was rejected.'),
     ]);
 
-    const context = createContext({ pendingApprovalRegistry: registry, toolRegistry });
+    const context = createContext({
+      pendingApprovalRegistry: registry,
+      toolRegistry,
+      initialMessages: [createMessage('user', 'ur-agent', 'Write auth')],
+    });
     const runtime = new AgentRuntime();
-    const runtimeConfig = RuntimeConfig.resolve({ get: () => undefined } as unknown as RuntimeContext['config']);
+    const runtimeConfig = RuntimeConfig.resolve({
+      get: () => undefined,
+    } as unknown as RuntimeContext['config']);
 
-    const result = await runtime.runLoop(
-      [createMessage('user', 'ur-agent', 'Write auth')],
-      0,
-      context,
-      codingAgent,
-      runtimeConfig,
-      provider,
-      [{ name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } }],
-    );
+    const result = await runtime.runLoop(0, context, codingAgent, runtimeConfig, provider, [
+      { name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } },
+    ]);
 
     expect(result.status).toBe('approval_required');
     const { conversationId, requests } = result.pendingApprovals!;
@@ -414,26 +459,28 @@ describe('AgentRuntime — caller approval batching', () => {
     });
 
     const provider = new MockLLMProvider([
-      toolCallResponse([{ id: 'tc-1', name: 'file_write', arguments: { path: 'src/auth.ts', content: 'code' } }]),
+      toolCallResponse([
+        { id: 'tc-1', name: 'file_write', arguments: { path: 'src/auth.ts', content: 'code' } },
+      ]),
     ]);
 
     const context = {
-      ...createContext({ pendingApprovalRegistry: registry, authEngine }),
+      ...createContext({
+        pendingApprovalRegistry: registry,
+        authEngine,
+        initialMessages: [createMessage('user', 'system', 'Write')],
+      }),
       callingParticipantId: undefined, // No caller
     } as unknown as RuntimeContext;
 
     const runtime = new AgentRuntime();
-    const runtimeConfig = RuntimeConfig.resolve({ get: () => undefined } as unknown as RuntimeContext['config']);
+    const runtimeConfig = RuntimeConfig.resolve({
+      get: () => undefined,
+    } as unknown as RuntimeContext['config']);
 
-    const result = await runtime.runLoop(
-      [createMessage('user', 'system', 'Write')],
-      0,
-      context,
-      codingAgent,
-      runtimeConfig,
-      provider,
-      [{ name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } }],
-    );
+    const result = await runtime.runLoop(0, context, codingAgent, runtimeConfig, provider, [
+      { name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } },
+    ]);
 
     // Without callingParticipantId, no batch is held — falls through to normal auth
     // (no handler → denied by default)
@@ -461,20 +508,17 @@ describe('AgentRuntime — caller approval batching', () => {
       callerParticipant: callerWithNoAuthority,
       pendingApprovalRegistry: registry,
       authEngine,
+      initialMessages: [createMessage('user', 'no-auth-agent', 'Write')],
     });
 
     const runtime = new AgentRuntime();
-    const runtimeConfig = RuntimeConfig.resolve({ get: () => undefined } as unknown as RuntimeContext['config']);
+    const runtimeConfig = RuntimeConfig.resolve({
+      get: () => undefined,
+    } as unknown as RuntimeContext['config']);
 
-    const result = await runtime.runLoop(
-      [createMessage('user', 'no-auth-agent', 'Write')],
-      0,
-      context,
-      codingAgent,
-      runtimeConfig,
-      provider,
-      [{ name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } }],
-    );
+    const result = await runtime.runLoop(0, context, codingAgent, runtimeConfig, provider, [
+      { name: 'file_write', description: 'Write', parameters: { type: 'object', properties: {} } },
+    ]);
 
     // Without authority, tool goes to normal auth path → no-handler → denied
     expect(registry.listPending()).toHaveLength(0);
@@ -669,7 +713,12 @@ describe('communicate tool — pending approval state', () => {
       requestingParticipantId: 'coding-agent',
       callingParticipantId: 'ur-agent',
       requests: [
-        { requestId: 'req-1', toolCallId: 'tc-1', toolName: 'file_write', toolArguments: { path: 'src/x.ts' } },
+        {
+          requestId: 'req-1',
+          toolCallId: 'tc-1',
+          toolName: 'file_write',
+          toolArguments: { path: 'src/x.ts' },
+        },
       ],
       resume: async () => ({ status: 'success', response: 'done' }),
     });
@@ -679,7 +728,9 @@ describe('communicate tool — pending approval state', () => {
       session: {
         data: { id: 'test-session' },
         collective: { get: () => codingAgent },
-        send: async () => { throw new Error('Should not be called when pending'); },
+        send: async () => {
+          throw new Error('Should not be called when pending');
+        },
       },
       pendingApprovalRegistry: registry,
       communicationDepth: 0,
@@ -722,10 +773,7 @@ describe('communicate tool — pending approval state', () => {
       communicationDepth: 0,
     } as unknown as RuntimeContext;
 
-    await communicateTool.execute(
-      { participantId: 'coding-agent', message: 'Hello' },
-      context,
-    );
+    await communicateTool.execute({ participantId: 'coding-agent', message: 'Hello' }, context);
 
     expect(capturedContext).not.toBeNull();
     expect(capturedContext!.callingParticipantId).toBe('ur-agent');

@@ -133,9 +133,7 @@ export class Conversation {
 
     try {
       // 1. Append user message to history (persists to disk)
-      await this.appendMessage(
-        createMessage('user', this.data.initiatorId, message),
-      );
+      await this.appendMessage(createMessage('user', this.data.initiatorId, message));
 
       // 2. Emit event
       context.eventBus.emit({
@@ -156,10 +154,9 @@ export class Conversation {
       });
 
       // 4. Append assistant response to history (persists to disk)
-      if (result.response) {
-        await this.appendMessage(
-          createMessage('assistant', this.data.targetId, result.response),
-        );
+      //    Only append the response if the runtime hasn't already persisted it.
+      if (result.response && !result.messagesPersisted) {
+        await this.appendMessage(createMessage('assistant', this.data.targetId, result.response));
       }
 
       return result;
