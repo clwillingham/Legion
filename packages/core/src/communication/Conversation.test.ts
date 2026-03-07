@@ -36,6 +36,53 @@ describe('Conversation', () => {
     );
   }
 
+  describe('send', () => {
+    it('persists user message and response to disk after send', async () => {
+      const { MockRuntime } = await import('../runtime/MockRuntime.js');
+      registry.register('mock', () => new MockRuntime());
+
+      const conv = makeConversation({ targetId: 'mock-agent' });
+      const mockTarget = {
+        id: 'mock-agent',
+        name: 'Mock',
+        type: 'mock' as const,
+        status: 'active' as const,
+        responses: [{ trigger: '.*', response: 'reply' }],
+      };
+
+      const { EventBus } = await import('../events/EventBus.js');
+      const { Session } = await import('./Session.js');
+      const { ToolRegistry } = await import('../tools/ToolRegistry.js');
+      const { Config } = await import('../config/Config.js');
+      const { AuthEngine } = await import('../authorization/AuthEngine.js');
+      const { PendingApprovalRegistry } = await import(
+        '../authorization/PendingApprovalRegistry.js'
+      );
+
+      const eventBus = new EventBus();
+      const context = {
+        participant: mockTarget,
+        conversation: conv,
+        session: {} as InstanceType<typeof Session>,
+        communicationDepth: 0,
+        toolRegistry: new ToolRegistry(),
+        config: new Config(tmpDir),
+        eventBus,
+        storage,
+        authEngine: new AuthEngine({ eventBus }),
+        pendingApprovalRegistry: new PendingApprovalRegistry(),
+      };
+
+      await conv.send('hello', mockTarget, context);
+
+      // After send completes, conversation should be persisted with both messages
+      const onDisk = await storage.readJSON<ConversationData>(conv.filePath);
+      expect(onDisk.messages.length).toBeGreaterThanOrEqual(2);
+      expect(onDisk.messages[0].content).toBe('hello');
+      expect(onDisk.messages[0].role).toBe('user');
+    });
+  });
+
   describe('appendMessage', () => {
     it('appends message to data.messages and persists to disk', async () => {
       const conv = makeConversation();

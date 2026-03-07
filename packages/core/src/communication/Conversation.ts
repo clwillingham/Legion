@@ -80,13 +80,12 @@ class AsyncLock {
  *
  * Responsibilities:
  * 1. Acquire lock (or return 'busy' error)
- * 2. Append 'user' message to history
+ * 2. Append 'user' message to history (persists to disk)
  * 3. Resolve target's ParticipantRuntime via RuntimeRegistry
  * 4. Call runtime.handleMessage(message, context)
- * 5. Append 'assistant' response to history
- * 6. Persist to disk
- * 7. Release lock
- * 8. Return result
+ * 5. Append 'assistant' response to history (persists to disk)
+ * 6. Release lock
+ * 7. Return result
  */
 export class Conversation {
   readonly data: ConversationData;
@@ -133,8 +132,8 @@ export class Conversation {
     }
 
     try {
-      // 1. Append user message to history
-      this.data.messages.push(
+      // 1. Append user message to history (persists to disk)
+      await this.appendMessage(
         createMessage('user', this.data.initiatorId, message),
       );
 
@@ -156,15 +155,12 @@ export class Conversation {
         conversation: this,
       });
 
-      // 4. Append assistant response to history
+      // 4. Append assistant response to history (persists to disk)
       if (result.response) {
-        this.data.messages.push(
+        await this.appendMessage(
           createMessage('assistant', this.data.targetId, result.response),
         );
       }
-
-      // 5. Persist to disk
-      await this.persist();
 
       return result;
     } catch (error) {
@@ -174,7 +170,7 @@ export class Conversation {
         error: `Conversation error: ${errorMessage}`,
       };
     } finally {
-      // 6. Release lock
+      // 5. Release lock
       this.lock.release();
     }
   }
