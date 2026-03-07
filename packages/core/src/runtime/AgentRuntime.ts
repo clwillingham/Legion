@@ -419,6 +419,7 @@ export class AgentRuntime extends ParticipantRuntime {
         return {
           status: 'error',
           error: `Agent "${agentConfig.name}" encountered an error: ${errorMessage}`,
+          messagesPersisted: true,
         };
       }
     }
@@ -429,6 +430,7 @@ export class AgentRuntime extends ParticipantRuntime {
       error:
         `Agent "${agentConfig.name}" reached the maximum iteration limit ` +
         `(${runtimeConfig.maxIterations}). The agent may be stuck in a loop.`,
+      messagesPersisted: true,
     };
   }
 
