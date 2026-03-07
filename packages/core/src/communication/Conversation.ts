@@ -187,6 +187,15 @@ export class Conversation {
   }
 
   /**
+   * Append a message and immediately persist to disk.
+   * This is the primary mutation method — every state change writes through.
+   */
+  async appendMessage(message: Message): Promise<void> {
+    this.data.messages.push(message);
+    await this.persist();
+  }
+
+  /**
    * Persist conversation data to disk.
    */
   async persist(): Promise<void> {
