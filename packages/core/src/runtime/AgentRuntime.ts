@@ -369,6 +369,39 @@ export class AgentRuntime extends ParticipantRuntime {
             resume,
           });
 
+          // ── Persist approval state to conversation ────────────────────────
+          // Build approval_pending tool results for held calls so the
+          // conversation on disk reflects the pending state.
+          const pendingToolResults: ToolCallResult[] = heldCalls.map((h) => ({
+            toolCallId: h.toolCallId,
+            tool: h.toolName,
+            status: 'approval_pending' as const,
+            result: JSON.stringify({
+              approvalId: pendingRequests.find((r) => r.toolCallId === h.toolCallId)?.requestId,
+              arguments: h.toolArguments,
+            }),
+          }));
+
+          // Merge with already-executed results (some tools in the same
+          // iteration may have already executed if they didn't need approval).
+          const allResults: ToolCallResult[] = response.toolCalls.map((tc) => {
+            const pending = pendingToolResults.find((r) => r.toolCallId === tc.id);
+            if (pending) return pending;
+            const executed = resultMap.get(tc.id);
+            return (
+              executed ?? {
+                toolCallId: tc.id,
+                tool: tc.name,
+                status: 'error' as const,
+                result: `No result for ${tc.id}`,
+              }
+            );
+          });
+
+          await context.conversation.appendMessage(
+            createMessage('user', agentConfig.id, '', undefined, allResults),
+          );
+
           return {
             status: 'approval_required',
             response: response.content || undefined,

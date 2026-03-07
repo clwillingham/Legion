@@ -20,11 +20,12 @@ import { AuthEngine } from '../authorization/AuthEngine.js';
 import { PendingApprovalRegistry } from '../authorization/PendingApprovalRegistry.js';
 import { EventBus } from '../events/EventBus.js';
 import { Storage } from '../workspace/Storage.js';
-import type { AgentConfig, MockConfig } from '../collective/Participant.js';
+import type { AgentConfig, MockConfig, AnyParticipantConfig } from '../collective/Participant.js';
 import type { LLMProvider, ChatOptions, ChatResponse } from '../providers/Provider.js';
 import type { Message } from '../communication/Message.js';
 import type { RuntimeContext } from './ParticipantRuntime.js';
 import type { ConversationData } from '../communication/Conversation.js';
+import type { ToolCallResult } from '../tools/Tool.js';
 
 // ── Scripted LLM provider ───────────────────────────────────────────────────
 
@@ -509,5 +510,300 @@ describe('AgentRuntime message persistence', () => {
     expect(convData.messages[2].toolResults).toHaveLength(2);
     expect(convData.messages[2].toolResults![0].result).toContain('Echo: alpha');
     expect(convData.messages[2].toolResults![1].result).toContain('Echo: beta');
+  });
+});
+
+// ── Approval pending persistence tests ──────────────────────────────────────
+
+/**
+ * Agent fixture with a tool that requires approval.
+ */
+const approvalAgent: AgentConfig = {
+  id: 'approval-agent',
+  type: 'agent',
+  name: 'Approval Agent',
+  description: 'Agent whose tool requires approval',
+  systemPrompt: 'You are a test agent.',
+  model: { provider: 'scripted', model: 'test-model' },
+  tools: {
+    guarded_tool: { mode: 'requires_approval' },
+    echo: { mode: 'auto' },
+  },
+  approvalAuthority: {},
+  status: 'active',
+  createdBy: 'system',
+  createdAt: '2026-01-01T00:00:00Z',
+};
+
+/**
+ * Caller agent that has approval authority over approvalAgent's guarded_tool.
+ */
+const callerAgent: AgentConfig = {
+  id: 'caller-agent',
+  type: 'agent',
+  name: 'Caller Agent',
+  description: 'Caller with approval authority',
+  systemPrompt: 'You are a caller.',
+  model: { provider: 'scripted', model: 'test-model' },
+  tools: {},
+  approvalAuthority: {
+    'approval-agent': ['guarded_tool'],
+  },
+  status: 'active',
+  createdBy: 'system',
+  createdAt: '2026-01-01T00:00:00Z',
+};
+
+interface ApprovalHarness {
+  session: Session;
+  provider: ScriptedProvider;
+  tmpDir: string;
+  storage: Storage;
+  baseContext: RuntimeContext;
+}
+
+async function buildApprovalHarness(provider: ScriptedProvider): Promise<ApprovalHarness> {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'legion-approval-persist-'));
+  const storage = new Storage(join(tmpDir, '.legion'));
+
+  const collective = new Collective(storage);
+  collective.loadFromArray([
+    userParticipant as unknown as AnyParticipantConfig,
+    approvalAgent as unknown as AnyParticipantConfig,
+    callerAgent as unknown as AnyParticipantConfig,
+  ]);
+
+  const toolRegistry = new ToolRegistry();
+  toolRegistry.register({
+    name: 'guarded_tool',
+    description: 'A tool that requires approval',
+    parameters: {
+      type: 'object',
+      properties: { action: { type: 'string' } },
+      required: ['action'],
+    },
+    async execute(args) {
+      const { action } = args as { action: string };
+      return { status: 'success', data: `Executed: ${action}` };
+    },
+  });
+
+  toolRegistry.register({
+    name: 'echo',
+    description: 'Echo the input back',
+    parameters: {
+      type: 'object',
+      properties: { text: { type: 'string' } },
+      required: ['text'],
+    },
+    async execute(args) {
+      const { text } = args as { text: string };
+      return { status: 'success', data: `Echo: ${text}` };
+    },
+  });
+
+  const authEngine = new AuthEngine({
+    toolPolicies: { guarded_tool: 'requires_approval' },
+  });
+  const registry = new PendingApprovalRegistry();
+  const eventBus = new EventBus();
+
+  const providerMap = new Map<string, ScriptedProvider>([['approval-agent', provider]]);
+
+  const runtimeRegistry = new RuntimeRegistry();
+  const testAgentRuntime = new TestAgentRuntime(providerMap);
+  runtimeRegistry.register('agent', () => testAgentRuntime);
+
+  const { MockRuntime } = await import('./MockRuntime.js');
+  runtimeRegistry.register('mock', () => new MockRuntime());
+
+  const config = {
+    get: () => undefined,
+    resolveApiKey: () => 'test-key',
+    getProviderConfig: () => undefined,
+    load: async () => {},
+  } as unknown as RuntimeContext['config'];
+
+  const session = Session.create('test-session', storage, runtimeRegistry, collective, eventBus);
+
+  const baseContext: RuntimeContext = {
+    participant: userParticipant as unknown as RuntimeContext['participant'],
+    conversation: null as unknown as RuntimeContext['conversation'],
+    session,
+    communicationDepth: 0,
+    toolRegistry,
+    config,
+    eventBus,
+    storage,
+    authEngine,
+    pendingApprovalRegistry: registry,
+    callingParticipantId: 'caller-agent',
+  };
+
+  // Patch session.send to inject full context
+  const originalSend = session.send.bind(session);
+  (session as unknown as Record<string, unknown>).send = (
+    initiatorId: string,
+    targetId: string,
+    message: string,
+    name: string | undefined,
+    ctx: RuntimeContext,
+  ) => originalSend(initiatorId, targetId, message, name, { ...baseContext, ...ctx });
+
+  return { session, provider, tmpDir, storage, baseContext };
+}
+
+async function readApprovalPersistedConversation(harness: ApprovalHarness): Promise<ConversationData> {
+  const sessionId = harness.session.data.id;
+  const conversationsDir = resolve(
+    harness.tmpDir,
+    '.legion',
+    'sessions',
+    sessionId,
+    'conversations',
+  );
+  const files = await import('node:fs/promises').then((fs) => fs.readdir(conversationsDir));
+  const convFile = files.find((f) => f.endsWith('.json'));
+  if (!convFile) throw new Error('No conversation file found on disk');
+
+  const raw = await readFile(join(conversationsDir, convFile), 'utf-8');
+  return JSON.parse(raw) as ConversationData;
+}
+
+describe('AgentRuntime approval_pending persistence', () => {
+  let harness: ApprovalHarness;
+
+  afterEach(async () => {
+    if (harness) {
+      await rm(harness.tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('persists approval_pending tool results to disk when tools require approval', async () => {
+    // Scenario: the LLM makes a single tool call for guarded_tool (requires_approval).
+    // The caller-agent has authority, so the call is held.
+    // Expected on disk: user message, assistant message with toolCalls,
+    // then a tool result message with approval_pending status.
+    const provider = new ScriptedProvider([
+      toolCallResponse([
+        { id: 'tc-1', name: 'guarded_tool', arguments: { action: 'deploy' } },
+      ]),
+    ]);
+
+    harness = await buildApprovalHarness(provider);
+
+    const result = await (
+      harness.session as unknown as {
+        send(
+          a: string,
+          b: string,
+          c: string,
+          d: undefined,
+          ctx: Partial<RuntimeContext>,
+        ): Promise<{
+          status: string;
+          pendingApprovals?: { requests: Array<{ requestId: string }> };
+        }>;
+      }
+    ).send('caller-agent', 'approval-agent', 'Deploy the application', undefined, {
+      communicationDepth: 0,
+      callingParticipantId: 'caller-agent',
+    });
+
+    // The result should be approval_required
+    expect(result.status).toBe('approval_required');
+    expect(result.pendingApprovals).toBeDefined();
+    expect(result.pendingApprovals!.requests).toHaveLength(1);
+
+    // Read the persisted conversation from disk
+    const convData = await readApprovalPersistedConversation(harness);
+
+    // Should have 3 messages: user, assistant (tool calls), tool results (approval_pending)
+    expect(convData.messages).toHaveLength(3);
+
+    // 1. User message
+    expect(convData.messages[0].role).toBe('user');
+    expect(convData.messages[0].content).toBe('Deploy the application');
+
+    // 2. Assistant message with tool calls
+    expect(convData.messages[1].role).toBe('assistant');
+    expect(convData.messages[1].toolCalls).toHaveLength(1);
+    expect(convData.messages[1].toolCalls![0].tool).toBe('guarded_tool');
+
+    // 3. Tool result message with approval_pending status
+    const toolResultMsg = convData.messages[2];
+    expect(toolResultMsg.role).toBe('user');
+    expect(toolResultMsg.toolResults).toBeDefined();
+    expect(toolResultMsg.toolResults).toHaveLength(1);
+
+    const pendingResult = toolResultMsg.toolResults![0] as ToolCallResult;
+    expect(pendingResult.toolCallId).toBe('tc-1');
+    expect(pendingResult.tool).toBe('guarded_tool');
+    expect(pendingResult.status).toBe('approval_pending');
+
+    // The result field should contain JSON with approvalId and arguments
+    const parsedResult = JSON.parse(pendingResult.result);
+    expect(parsedResult.approvalId).toBe(result.pendingApprovals!.requests[0].requestId);
+    expect(parsedResult.arguments).toEqual({ action: 'deploy' });
+  });
+
+  it('merges approval_pending and executed tool results in the same iteration', async () => {
+    // Scenario: LLM makes two tool calls in one iteration:
+    //   - echo (auto) → executes immediately
+    //   - guarded_tool (requires_approval) → held
+    // Expected: tool result message contains both results in LLM order.
+    const provider = new ScriptedProvider([
+      toolCallResponse([
+        { id: 'tc-1', name: 'echo', arguments: { text: 'hello' } },
+        { id: 'tc-2', name: 'guarded_tool', arguments: { action: 'risky-op' } },
+      ]),
+    ]);
+
+    harness = await buildApprovalHarness(provider);
+
+    const result = await (
+      harness.session as unknown as {
+        send(
+          a: string,
+          b: string,
+          c: string,
+          d: undefined,
+          ctx: Partial<RuntimeContext>,
+        ): Promise<{
+          status: string;
+          pendingApprovals?: { requests: Array<{ requestId: string }> };
+        }>;
+      }
+    ).send('caller-agent', 'approval-agent', 'Do both things', undefined, {
+      communicationDepth: 0,
+      callingParticipantId: 'caller-agent',
+    });
+
+    expect(result.status).toBe('approval_required');
+
+    const convData = await readApprovalPersistedConversation(harness);
+
+    // 3 messages: user, assistant (2 tool calls), tool results (2 results)
+    expect(convData.messages).toHaveLength(3);
+
+    const toolResultMsg = convData.messages[2];
+    expect(toolResultMsg.toolResults).toHaveLength(2);
+
+    // First result: echo (executed immediately, success)
+    const echoResult = toolResultMsg.toolResults![0] as ToolCallResult;
+    expect(echoResult.toolCallId).toBe('tc-1');
+    expect(echoResult.tool).toBe('echo');
+    expect(echoResult.status).toBe('success');
+    expect(echoResult.result).toContain('Echo: hello');
+
+    // Second result: guarded_tool (held, approval_pending)
+    const guardedResult = toolResultMsg.toolResults![1] as ToolCallResult;
+    expect(guardedResult.toolCallId).toBe('tc-2');
+    expect(guardedResult.tool).toBe('guarded_tool');
+    expect(guardedResult.status).toBe('approval_pending');
+
+    const parsedResult = JSON.parse(guardedResult.result);
+    expect(parsedResult.approvalId).toBe(result.pendingApprovals!.requests[0].requestId);
+    expect(parsedResult.arguments).toEqual({ action: 'risky-op' });
   });
 });
