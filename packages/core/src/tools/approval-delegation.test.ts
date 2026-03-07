@@ -172,6 +172,9 @@ function createMockConversation(
     appendMessage: async (msg: Message) => {
       messages.push(msg);
     },
+    replaceMessage: async (index: number, msg: Message) => {
+      messages[index] = msg;
+    },
     isBusy: false,
   };
 }

@@ -189,6 +189,21 @@ export class Conversation {
   }
 
   /**
+   * Replace a message at the given index and immediately persist to disk.
+   * Used when approval_pending tool results are resolved — the pending
+   * message is replaced with the actual execution results.
+   */
+  async replaceMessage(index: number, message: Message): Promise<void> {
+    if (index < 0 || index >= this.data.messages.length) {
+      throw new Error(
+        `replaceMessage: index ${index} out of bounds (0..${this.data.messages.length - 1})`,
+      );
+    }
+    this.data.messages[index] = message;
+    await this.persist();
+  }
+
+  /**
    * Persist conversation data to disk.
    */
   async persist(): Promise<void> {

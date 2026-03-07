@@ -806,4 +806,79 @@ describe('AgentRuntime approval_pending persistence', () => {
     expect(parsedResult.approvalId).toBe(result.pendingApprovals!.requests[0].requestId);
     expect(parsedResult.arguments).toEqual({ action: 'risky-op' });
   });
+
+  it('replaces approval_pending message with actual results on resume', async () => {
+    // Scenario: LLM calls guarded_tool -> approval_pending persisted -> resume called ->
+    // approval_pending message is REPLACED (not duplicated)
+    const provider = new ScriptedProvider([
+      toolCallResponse([
+        { id: 'tc-1', name: 'guarded_tool', arguments: { action: 'deploy' } },
+      ]),
+      textResponse('Deployment complete'),
+    ]);
+
+    harness = await buildApprovalHarness(provider);
+
+    const result = await (
+      harness.session as unknown as {
+        send(
+          a: string,
+          b: string,
+          c: string,
+          d: undefined,
+          ctx: Partial<RuntimeContext>,
+        ): Promise<{
+          status: string;
+          response?: string;
+          pendingApprovals?: {
+            conversationId: string;
+            requests: Array<{ requestId: string }>;
+          };
+        }>;
+      }
+    ).send('caller-agent', 'approval-agent', 'Deploy the app', undefined, {
+      communicationDepth: 0,
+      callingParticipantId: 'caller-agent',
+    });
+
+    expect(result.status).toBe('approval_required');
+    expect(result.pendingApprovals).toBeDefined();
+
+    // Verify approval_pending is on disk
+    let convData = await readApprovalPersistedConversation(harness);
+    expect(convData.messages).toHaveLength(3);
+    expect(convData.messages[2].toolResults![0].status).toBe('approval_pending');
+
+    // Now resume with approval
+    const pendingConvId = result.pendingApprovals!.conversationId;
+    const registry = harness.baseContext.pendingApprovalRegistry;
+    const batch = registry.get(pendingConvId);
+    expect(batch).toBeDefined();
+
+    const decisions = new Map<string, { approved: boolean }>();
+    for (const req of batch!.requests) {
+      decisions.set(req.requestId, { approved: true });
+    }
+    const resumeResult = await batch!.resume(decisions);
+
+    expect(resumeResult.status).toBe('success');
+    expect(resumeResult.response).toBe('Deployment complete');
+
+    // Read the conversation from disk again
+    convData = await readApprovalPersistedConversation(harness);
+
+    // Key assertion: no message should have approval_pending status
+    for (const msg of convData.messages) {
+      if (msg.toolResults) {
+        for (const tr of msg.toolResults) {
+          expect(tr.status).not.toBe('approval_pending');
+        }
+      }
+    }
+
+    // The message at index 2 should now have been REPLACED with actual 'success' results
+    expect(convData.messages[2].toolResults).toBeDefined();
+    expect(convData.messages[2].toolResults![0].status).toBe('success');
+    expect(convData.messages[2].toolResults![0].result).toContain('Executed: deploy');
+  });
 });

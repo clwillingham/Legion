@@ -100,6 +100,33 @@ describe('Conversation', () => {
       expect(onDisk.messages[0].content).toBe('hello');
     });
 
+    it('replaces a message at the given index and persists to disk', async () => {
+      const conv = makeConversation();
+      await conv.appendMessage(createMessage('user', 'user', 'first'));
+      await conv.appendMessage(createMessage('assistant', 'agent', 'second'));
+
+      const replacement = createMessage('assistant', 'agent', 'replaced');
+      await conv.replaceMessage(1, replacement);
+
+      // In-memory
+      expect(conv.getMessages()).toHaveLength(2);
+      expect(conv.getMessages()[1].content).toBe('replaced');
+
+      // On disk
+      const onDisk = await storage.readJSON<ConversationData>(conv.filePath);
+      expect(onDisk.messages).toHaveLength(2);
+      expect(onDisk.messages[1].content).toBe('replaced');
+    });
+
+    it('throws on out-of-bounds index for replaceMessage', async () => {
+      const conv = makeConversation();
+      await conv.appendMessage(createMessage('user', 'user', 'only'));
+
+      await expect(
+        conv.replaceMessage(5, createMessage('user', 'user', 'bad')),
+      ).rejects.toThrow('out of bounds');
+    });
+
     it('persists tool calls and tool results in messages', async () => {
       const conv = makeConversation();
       const assistantMsg = createMessage('assistant', 'agent', '', [

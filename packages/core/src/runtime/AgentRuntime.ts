@@ -345,8 +345,23 @@ export class AgentRuntime extends ParticipantRuntime {
               undefined,
               orderedResults,
             );
-            // Append to conversation (persists to disk) instead of local array
-            await context.conversation.appendMessage(toolResultMessage);
+            // Replace the approval_pending message (instead of appending a duplicate).
+            // Search backwards for the message with approval_pending tool results.
+            const messages = context.conversation.getMessages();
+            let pendingIdx = -1;
+            for (let i = messages.length - 1; i >= 0; i--) {
+              const msg = messages[i];
+              if (msg.toolResults?.some((tr) => tr.status === 'approval_pending')) {
+                pendingIdx = i;
+                break;
+              }
+            }
+            if (pendingIdx >= 0) {
+              await context.conversation.replaceMessage(pendingIdx, toolResultMessage);
+            } else {
+              // Fallback: if no pending message found, just append
+              await context.conversation.appendMessage(toolResultMessage);
+            }
 
             // Clear this batch from the registry and continue the loop
             context.pendingApprovalRegistry.clear(conversationId);
