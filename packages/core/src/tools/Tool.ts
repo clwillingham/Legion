@@ -79,7 +79,7 @@ export interface ToolCallResult {
   tool: string;
 
   /** Execution status */
-  status: 'success' | 'error' | 'approval_required' | 'rejected';
+  status: 'success' | 'error' | 'approval_required' | 'approval_pending' | 'rejected';
 
   /** The result content (stringified for the LLM) */
   result: string;
