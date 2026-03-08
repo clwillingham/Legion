@@ -867,6 +867,10 @@ describe('AgentRuntime approval_pending persistence', () => {
     // Read the conversation from disk again
     convData = await readApprovalPersistedConversation(harness);
 
+    // After resume: should have exactly 4 messages (user, assistant+tc, toolResults, final text)
+    // — the approval_pending message was replaced, not duplicated
+    expect(convData.messages).toHaveLength(4);
+
     // Key assertion: no message should have approval_pending status
     for (const msg of convData.messages) {
       if (msg.toolResults) {
