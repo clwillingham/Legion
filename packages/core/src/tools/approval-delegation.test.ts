@@ -784,6 +784,61 @@ describe('communicate tool — pending approval state', () => {
   });
 });
 
+// ── communicate tool — conversationRef in result ────────────────────────────
+
+describe('communicate tool — conversationRef in result data', () => {
+  it('includes conversationRef in success result data', async () => {
+    const registry = new PendingApprovalRegistry();
+
+    const context = {
+      participant: { id: 'ur-agent', type: 'agent' },
+      session: {
+        data: { id: 'test-session' },
+        collective: { get: () => codingAgent },
+        send: async () => ({ status: 'success', response: 'I completed the task.' }),
+      },
+      pendingApprovalRegistry: registry,
+      communicationDepth: 0,
+    } as unknown as RuntimeContext;
+
+    const result = await communicateTool.execute(
+      { participantId: 'coding-agent', message: 'Do the work' },
+      context,
+    );
+
+    expect(result.status).toBe('success');
+    // data should be a JSON string containing both response and conversationRef
+    const data = JSON.parse(result.data as string);
+    expect(data.response).toBe('I completed the task.');
+    expect(data.conversationRef).toBe('ur-agent__coding-agent');
+  });
+
+  it('does not include conversationRef in error result data', async () => {
+    const registry = new PendingApprovalRegistry();
+
+    const context = {
+      participant: { id: 'ur-agent', type: 'agent' },
+      session: {
+        data: { id: 'test-session' },
+        collective: { get: () => codingAgent },
+        send: async () => ({ status: 'error', error: 'Something went wrong', response: 'Error occurred' }),
+      },
+      pendingApprovalRegistry: registry,
+      communicationDepth: 0,
+    } as unknown as RuntimeContext;
+
+    const result = await communicateTool.execute(
+      { participantId: 'coding-agent', message: 'Do the work' },
+      context,
+    );
+
+    expect(result.status).toBe('error');
+    // Error results should return plain response text, not JSON
+    expect(result.data).toBe('Error occurred');
+    expect(result.error).toBe('Something went wrong');
+  });
+});
+
 // ── PendingApprovalRegistry ─────────────────────────────────────────────────
 
 describe('PendingApprovalRegistry', () => {

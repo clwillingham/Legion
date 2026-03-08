@@ -115,9 +115,13 @@ export const communicateTool: Tool = {
         };
       }
 
+      const conversationRef = `${callerParticipantId}__${participantId}`;
       return {
         status: result.status === 'success' ? 'success' : 'error',
-        data: result.response,
+        data:
+          result.status === 'success'
+            ? JSON.stringify({ response: result.response, conversationRef })
+            : result.response,
         error: result.error,
       };
     } catch (error) {
