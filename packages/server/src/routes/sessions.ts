@@ -61,6 +61,7 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { workspace:
     if (!session) {
       return reply.code(404).send({ error: `Session not found: ${id}` });
     }
+    await session.loadAllConversations();
     return session.listConversations().map(c => c.data);
   });
 
@@ -81,6 +82,7 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { workspace:
     if (!session) {
       return reply.code(404).send({ error: `Session not found: ${id}` });
     }
+    await session.loadAllConversations();
 
     const conversation = session.listConversations().find(c => {
       const key = [c.data.initiatorId, c.data.targetId];

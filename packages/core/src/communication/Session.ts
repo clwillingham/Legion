@@ -160,7 +160,7 @@ export class Session {
    * Load all conversations for this session from disk.
    * Called during session resume to hydrate the conversation map.
    */
-  private async loadAllConversations(): Promise<void> {
+  async loadAllConversations(): Promise<void> {
     const conversationsDir = `sessions/${this.data.id}/conversations`;
     const files = await this.storage.list(conversationsDir);
 
