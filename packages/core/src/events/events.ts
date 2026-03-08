@@ -131,6 +131,25 @@ export interface ProcessErrorEvent {
   timestamp: Date;
 }
 
+// ── Conversation Events ──────────────────────────────────────
+
+export interface ConversationUpdatedEvent {
+  type: 'conversation:updated';
+  sessionId: string;
+  conversationId: string;
+  message: import('../communication/Message.js').Message;
+  timestamp: Date;
+}
+
+export interface ConversationMessageReplacedEvent {
+  type: 'conversation:message-replaced';
+  sessionId: string;
+  conversationId: string;
+  message: import('../communication/Message.js').Message;
+  index: number;
+  timestamp: Date;
+}
+
 /**
  * Union of all event types.
  */
@@ -148,7 +167,9 @@ export type LegionEvent =
   | ProcessStartedEvent
   | ProcessOutputEvent
   | ProcessCompletedEvent
-  | ProcessErrorEvent;
+  | ProcessErrorEvent
+  | ConversationUpdatedEvent
+  | ConversationMessageReplacedEvent;
 
 /**
  * Map event type strings to their event interfaces.
@@ -168,4 +189,6 @@ export type EventMap = {
   'process:output': ProcessOutputEvent;
   'process:completed': ProcessCompletedEvent;
   'process:error': ProcessErrorEvent;
+  'conversation:updated': ConversationUpdatedEvent;
+  'conversation:message-replaced': ConversationMessageReplacedEvent;
 };

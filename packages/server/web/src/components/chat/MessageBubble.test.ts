@@ -75,7 +75,7 @@ describe('MessageBubble', () => {
   it('renders tool calls when present', () => {
     const msg = assistantMessage('Using tools');
     msg.toolCalls = [
-      { id: 'tc-1', name: 'read_file', arguments: { path: '/tmp/test' } },
+      { id: 'tc-1', tool: 'read_file', args: { path: '/tmp/test' } },
     ];
     const wrapper = mount(MessageBubble, {
       props: { message: msg },

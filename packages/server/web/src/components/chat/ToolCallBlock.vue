@@ -16,11 +16,11 @@ const expanded = ref(false);
       @click="expanded = !expanded"
     >
       <span>🔧</span>
-      <span class="font-mono">{{ toolCall.name }}</span>
+      <span class="font-mono">{{ toolCall.tool }}</span>
       <span class="ml-auto text-gray-600">{{ expanded ? '▲' : '▼' }}</span>
     </button>
     <div v-if="expanded" class="px-2 pb-2 border-t border-gray-700/50">
-      <pre class="text-gray-500 mt-1 overflow-x-auto">{{ JSON.stringify(toolCall.arguments, null, 2) }}</pre>
+      <pre class="text-gray-500 mt-1 overflow-x-auto">{{ JSON.stringify(toolCall.args, null, 2) }}</pre>
     </div>
   </div>
 </template>

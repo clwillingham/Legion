@@ -20,13 +20,15 @@ export interface Message {
 
 export interface ToolCall {
   id: string;
-  name: string;
-  arguments: Record<string, unknown>;
+  tool: string;
+  args: unknown;
 }
 
 export interface ToolCallResult {
   toolCallId: string;
-  result: unknown;
+  tool: string;
+  status: 'success' | 'error' | 'approval_required' | 'approval_pending' | 'rejected';
+  result: string;
 }
 
 export interface ConversationData {
@@ -65,9 +67,6 @@ const activeConversationKey = ref<string | null>(null);
  */
 const awaitingAgentResponseConvId = ref<string | null>(null);
 
-// Track the current send target so we can attribute the response
-let lastSendTarget: string | null = null;
-
 // WS handler registered exactly once
 let handlerRegistered = false;
 
@@ -76,6 +75,35 @@ function addMessage(convKey: string, msg: Omit<Message, 'toolCalls' | 'toolResul
     messages.set(convKey, []);
   }
   messages.get(convKey)!.push(msg as Message);
+}
+
+/**
+ * Re-derive pendingApprovals from all messages across all conversations.
+ * Called after message replacements to ensure approval state stays in sync.
+ */
+function rederivePendingApprovals() {
+  const derived: ApprovalRequest[] = [];
+  for (const [_key, msgs] of messages.entries()) {
+    for (const msg of msgs) {
+      if (!msg.toolResults) continue;
+      for (const tr of msg.toolResults) {
+        if (tr.status === 'approval_pending') {
+          try {
+            const parsed = JSON.parse(tr.result);
+            derived.push({
+              requestId: parsed.approvalId,
+              participantId: msg.participantId,
+              toolName: tr.tool,
+              arguments: parsed.arguments ?? {},
+            });
+          } catch {
+            // ignore parse errors
+          }
+        }
+      }
+    }
+  }
+  pendingApprovals.value = derived;
 }
 
 function registerWSHandler() {
@@ -89,23 +117,12 @@ function registerWSHandler() {
 
     switch (msg.type) {
       case 'message:sent': {
-        const convKey = `${data['fromParticipantId']}__${data['toParticipantId']}`;
-        addMessage(convKey, {
-          role: 'user',
-          participantId: data['fromParticipantId'] as string,
-          content: data['content'] as string,
-          timestamp: (data['timestamp'] as Date)?.toString?.() ?? new Date().toISOString(),
-        });
+        // conversation:updated handles adding the message.
+        // agentWorking is already set by sendMessage().
         break;
       }
       case 'message:received': {
-        const convKey = `${data['toParticipantId']}__${data['fromParticipantId']}`;
-        addMessage(convKey, {
-          role: 'assistant',
-          participantId: data['fromParticipantId'] as string,
-          content: data['content'] as string,
-          timestamp: (data['timestamp'] as Date)?.toString?.() ?? new Date().toISOString(),
-        });
+        // conversation:updated handles adding the message.
         agentWorking.value = false;
         activeToolCall.value = null;
         break;
@@ -136,44 +153,98 @@ function registerWSHandler() {
         // Agent initiated a conversation with the user.
         // conversationId is "agentId__userId" (agent is initiator, user is target).
         const convKey = data['conversationId'] as string;
-        const fromId = data['fromParticipantId'] as string;
-        // Add the agent's message to the map (agent is the 'user' role in this conv)
-        addMessage(convKey, {
-          role: 'user',
-          participantId: fromId,
-          content: data['message'] as string,
-          timestamp: msg.timestamp,
-        });
         // Switch the active conversation to this one so the user sees it
         activeConversationKey.value = convKey;
         // Mark that WebRuntime is waiting for the user's response
         awaitingAgentResponseConvId.value = convKey;
+        // Note: the actual message is added by conversation:updated
         break;
       }
       case 'send:result': {
-        // session.send() completed — extract the agent's response from RuntimeResult
-        const result = data as Record<string, unknown>;
-        if (result['response'] && lastSendTarget) {
-          const convKey = `user__${lastSendTarget}`;
-          addMessage(convKey, {
-            role: 'assistant',
-            participantId: lastSendTarget,
-            content: result['response'] as string,
-            timestamp: new Date().toISOString(),
-          });
-        }
+        // conversation:updated handles adding the message.
         agentWorking.value = false;
         activeToolCall.value = null;
-        lastSendTarget = null;
+        break;
+      }
+      case 'conversation:updated': {
+        const convKey = data['conversationId'] as string;
+        const msg = data['message'] as Message | undefined;
+        if (convKey && msg) {
+          if (!messages.has(convKey)) {
+            messages.set(convKey, []);
+          }
+          messages.get(convKey)!.push(msg);
+
+          // If message has approval_pending tool results, add to pendingApprovals
+          if (msg.toolResults) {
+            for (const tr of msg.toolResults) {
+              if (tr.status === 'approval_pending') {
+                try {
+                  const parsed = JSON.parse(tr.result);
+                  pendingApprovals.value.push({
+                    requestId: parsed.approvalId,
+                    participantId: msg.participantId,
+                    toolName: tr.tool,
+                    arguments: parsed.arguments ?? {},
+                  });
+                } catch {
+                  // ignore parse errors
+                }
+              }
+            }
+          }
+
+          // If the conversation isn't in our list yet, refresh from server
+          if (!conversations.value.some(c => {
+            const key = c.name
+              ? `${c.initiatorId}__${c.targetId}__${c.name}`
+              : `${c.initiatorId}__${c.targetId}`;
+            return key === convKey;
+          })) {
+            // Will be picked up by loadConversations
+            loadConversationsBackground();
+          }
+        }
+        break;
+      }
+      case 'conversation:message-replaced': {
+        const convKey = data['conversationId'] as string;
+        const msg = data['message'] as Message | undefined;
+        const idx = data['index'] as number | undefined;
+        if (convKey && msg && idx !== undefined) {
+          const msgs = messages.get(convKey);
+          if (msgs && idx >= 0 && idx < msgs.length) {
+            msgs[idx] = msg;
+          }
+        }
+        // Re-derive pending approvals from all messages
+        rederivePendingApprovals();
         break;
       }
       case 'error':
         agentWorking.value = false;
         activeToolCall.value = null;
-        lastSendTarget = null;
         break;
     }
   });
+}
+
+/** Background-refresh conversations from the server (non-blocking). */
+let _loadConversationsApi: ReturnType<typeof useApi> | null = null;
+function loadConversationsBackground() {
+  // Lazy-init an api instance for background loads
+  if (!_loadConversationsApi) {
+    _loadConversationsApi = useApi();
+  }
+  if (!session.value) return;
+  _loadConversationsApi
+    .get<ConversationData[]>(`/sessions/${session.value.id}/conversations`)
+    .then((convs) => {
+      conversations.value = convs;
+    })
+    .catch(() => {
+      // ignore background load errors
+    });
 }
 
 // ── Composable (safe to call from multiple components) ──────────────
@@ -203,9 +274,13 @@ export function useSession() {
     );
     // Populate messages map from loaded conversations
     for (const conv of conversations.value) {
-      const key = `${conv.initiatorId}__${conv.targetId}`;
+      const key = conv.name
+        ? `${conv.initiatorId}__${conv.targetId}__${conv.name}`
+        : `${conv.initiatorId}__${conv.targetId}`;
       messages.set(key, conv.messages ?? []);
     }
+    // Derive pending approvals from loaded conversation messages
+    rederivePendingApprovals();
     // Auto-select most recent conversation if nothing is selected
     if (!activeConversationKey.value && conversations.value.length > 0) {
       const sorted = [...conversations.value].sort(
@@ -256,7 +331,6 @@ export function useSession() {
   async function sendMessage(target: string, message: string, conversation?: string) {
     if (!session.value) return;
     agentWorking.value = true;
-    lastSendTarget = target;
     // Ensure active conversation is set to the target
     activeConversationKey.value = `user__${target}`;
     send({

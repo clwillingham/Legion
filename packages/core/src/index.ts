@@ -180,6 +180,8 @@ export type {
   ProcessOutputEvent,
   ProcessCompletedEvent,
   ProcessErrorEvent,
+  ConversationUpdatedEvent,
+  ConversationMessageReplacedEvent,
 } from './events/events.js';
 export { EventBus } from './events/EventBus.js';
 

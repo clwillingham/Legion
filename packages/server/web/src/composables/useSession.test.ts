@@ -49,14 +49,17 @@ describe('useSession', () => {
 
     const { messages } = useSession();
 
-    // Send a message:sent event — should only create ONE message entry
+    // Send a conversation:updated event — should only create ONE message entry
     simulateWSMessage({
-      type: 'message:sent',
+      type: 'conversation:updated',
       data: {
-        fromParticipantId: 'user',
-        toParticipantId: 'agent-1',
-        content: 'hello',
-        timestamp: new Date().toISOString(),
+        conversationId: 'user__agent-1',
+        message: {
+          role: 'user',
+          participantId: 'user',
+          content: 'hello',
+          timestamp: new Date().toISOString(),
+        },
       },
       timestamp: new Date().toISOString(),
     });
@@ -67,7 +70,7 @@ describe('useSession', () => {
     expect(msgs[0].role).toBe('user');
   });
 
-  it('handles message:sent event — adds user message', async () => {
+  it('handles conversation:updated event — adds message to conversation', async () => {
     const { useWebSocket, useSession } = await freshModules();
     const { connect } = useWebSocket();
     connect();
@@ -75,12 +78,15 @@ describe('useSession', () => {
     const { messages } = useSession();
 
     simulateWSMessage({
-      type: 'message:sent',
+      type: 'conversation:updated',
       data: {
-        fromParticipantId: 'user',
-        toParticipantId: 'agent-1',
-        content: 'test message',
-        timestamp: '2025-01-01T00:00:00Z',
+        conversationId: 'user__agent-1',
+        message: {
+          role: 'user',
+          participantId: 'user',
+          content: 'test message',
+          timestamp: '2025-01-01T00:00:00Z',
+        },
       },
       timestamp: '2025-01-01T00:00:00Z',
     });
@@ -94,7 +100,7 @@ describe('useSession', () => {
     });
   });
 
-  it('handles send:result — adds agent response and clears agentWorking', async () => {
+  it('handles conversation:updated with assistant message and send:result clears agentWorking', async () => {
     const { useWebSocket, useSession } = await freshModules();
     const { connect } = useWebSocket();
     connect();
@@ -106,7 +112,22 @@ describe('useSession', () => {
     session.value = { id: 's1', name: 'Test', createdAt: '', status: 'active' };
     sendMessage('agent-1', 'hi');
 
-    // Now the server responds with send:result including the agent's response
+    // conversation:updated delivers the assistant response
+    simulateWSMessage({
+      type: 'conversation:updated',
+      data: {
+        conversationId: 'user__agent-1',
+        message: {
+          role: 'assistant',
+          participantId: 'agent-1',
+          content: 'Hello! How can I help?',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    // send:result clears the working flag
     simulateWSMessage({
       type: 'send:result',
       data: {
@@ -140,6 +161,64 @@ describe('useSession', () => {
 
     expect(agentWorking.value).toBe(false);
     expect(messages.size).toBe(0);
+  });
+
+  it('handles conversation:message-replaced event — replaces message at index', async () => {
+    const { useWebSocket, useSession } = await freshModules();
+    const { connect } = useWebSocket();
+    connect();
+
+    const { messages } = useSession();
+
+    // First add two messages
+    simulateWSMessage({
+      type: 'conversation:updated',
+      data: {
+        conversationId: 'user__agent-1',
+        message: {
+          role: 'user',
+          participantId: 'user',
+          content: 'original-1',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      timestamp: new Date().toISOString(),
+    });
+    simulateWSMessage({
+      type: 'conversation:updated',
+      data: {
+        conversationId: 'user__agent-1',
+        message: {
+          role: 'assistant',
+          participantId: 'agent-1',
+          content: 'original-2',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    expect(messages.get('user__agent-1')).toHaveLength(2);
+
+    // Replace the second message
+    simulateWSMessage({
+      type: 'conversation:message-replaced',
+      data: {
+        conversationId: 'user__agent-1',
+        index: 1,
+        message: {
+          role: 'assistant',
+          participantId: 'agent-1',
+          content: 'replaced',
+          timestamp: new Date().toISOString(),
+        },
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    const msgs = messages.get('user__agent-1')!;
+    expect(msgs).toHaveLength(2);
+    expect(msgs[1].content).toBe('replaced');
   });
 
   it('handles error event — clears agentWorking', async () => {

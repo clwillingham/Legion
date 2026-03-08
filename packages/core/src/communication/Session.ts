@@ -112,7 +112,7 @@ export class Session {
     const data = await this.loadConversationData(initiatorId, targetId, name);
 
     if (data) {
-      conversation = new Conversation(data, this.storage, this.runtimeRegistry);
+      conversation = new Conversation(data, this.storage, this.runtimeRegistry, this.eventBus);
     } else {
       // Create new conversation
       const newData: ConversationData = {
@@ -124,7 +124,7 @@ export class Session {
         createdAt: new Date().toISOString(),
       };
 
-      conversation = new Conversation(newData, this.storage, this.runtimeRegistry);
+      conversation = new Conversation(newData, this.storage, this.runtimeRegistry, this.eventBus);
 
       this.eventBus.emit({
         type: 'session:started',
@@ -176,7 +176,7 @@ export class Session {
           data.targetId,
           data.name,
         );
-        const conversation = new Conversation(data, this.storage, this.runtimeRegistry);
+        const conversation = new Conversation(data, this.storage, this.runtimeRegistry, this.eventBus);
         this.conversations.set(key, conversation);
       } catch {
         // Skip corrupted conversation files

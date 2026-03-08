@@ -3,6 +3,7 @@ import { RuntimeRegistry } from '../runtime/RuntimeRegistry.js';
 import type { RuntimeContext, RuntimeResult } from '../runtime/ParticipantRuntime.js';
 import type { ParticipantConfig } from '../collective/Participant.js';
 import type { Storage } from '../workspace/Storage.js';
+import type { EventBus } from '../events/EventBus.js';
 
 /**
  * Conversation data — what gets persisted to disk.
@@ -92,11 +93,18 @@ export class Conversation {
   private lock: AsyncLock = new AsyncLock();
   private storage: Storage;
   private runtimeRegistry: RuntimeRegistry;
+  private eventBus?: EventBus;
 
-  constructor(data: ConversationData, storage: Storage, runtimeRegistry: RuntimeRegistry) {
+  constructor(
+    data: ConversationData,
+    storage: Storage,
+    runtimeRegistry: RuntimeRegistry,
+    eventBus?: EventBus,
+  ) {
     this.data = data;
     this.storage = storage;
     this.runtimeRegistry = runtimeRegistry;
+    this.eventBus = eventBus;
   }
 
   /**
@@ -180,12 +188,32 @@ export class Conversation {
   }
 
   /**
+   * The conversation key used in events (e.g. "user__agent").
+   */
+  conversationKey(): string {
+    const parts = [this.data.initiatorId, this.data.targetId];
+    if (this.data.name) {
+      parts.push(this.data.name);
+    }
+    return parts.join('__');
+  }
+
+  /**
    * Append a message and immediately persist to disk.
    * This is the primary mutation method — every state change writes through.
    */
   async appendMessage(message: Message): Promise<void> {
     this.data.messages.push(message);
     await this.persist();
+    if (this.eventBus) {
+      this.eventBus.emit({
+        type: 'conversation:updated',
+        sessionId: this.data.sessionId,
+        conversationId: this.conversationKey(),
+        message,
+        timestamp: new Date(),
+      });
+    }
   }
 
   /**
@@ -201,6 +229,16 @@ export class Conversation {
     }
     this.data.messages[index] = message;
     await this.persist();
+    if (this.eventBus) {
+      this.eventBus.emit({
+        type: 'conversation:message-replaced',
+        sessionId: this.data.sessionId,
+        conversationId: this.conversationKey(),
+        message,
+        index,
+        timestamp: new Date(),
+      });
+    }
   }
 
   /**
