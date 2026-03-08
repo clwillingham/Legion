@@ -46,6 +46,16 @@ const currentMessages = computed(() => {
   return messages.get(activeConversationKey.value) ?? [];
 });
 
+/** Filter pending approvals to only those relevant to the active conversation's agent. */
+const activeApprovals = computed(() => {
+  const key = activeConversationKey.value;
+  if (!key) return [];
+  // Get the target participant from the active conversation
+  const parts = key.split('__');
+  const agentId = parts[0] === 'user' ? parts[1] : parts[0];
+  return pendingApprovals.value.filter(a => a.participantId === agentId);
+});
+
 function getParticipantName(id: string): string {
   return participants.value.find(p => p.id === id)?.name ?? id;
 }
@@ -67,6 +77,10 @@ function handleSend(message: string) {
 function handleNewConversation(agentId: string) {
   const key = `user__${agentId}`;
   setActiveConversation(key);
+}
+
+function handleNavigateConversation(conversationRef: string) {
+  setActiveConversation(conversationRef);
 }
 
 function handleApprovalRespond(requestId: string, approved: boolean, reason?: string) {
@@ -122,10 +136,11 @@ watch(currentMessages, async () => {
             :key="i"
             :message="msg"
             :participant-name="getParticipantName(msg.participantId)"
+            @navigate-conversation="handleNavigateConversation"
           />
 
           <ApprovalCard
-            v-for="approval in pendingApprovals"
+            v-for="approval in activeApprovals"
             :key="approval.requestId"
             :request="approval"
             @respond="handleApprovalRespond"
