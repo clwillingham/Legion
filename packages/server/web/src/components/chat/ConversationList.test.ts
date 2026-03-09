@@ -202,4 +202,54 @@ describe('ConversationList', () => {
     const alphaIndex = text.indexOf('Alpha Agent');
     expect(betaIndex).toBeLessThan(alphaIndex);
   });
+
+  it('hides agent-to-agent conversations from the sidebar', () => {
+    const userConv = makeConversation({ initiatorId: 'user', targetId: 'agent-1' });
+    const agentConv = makeConversation({ initiatorId: 'agent-1', targetId: 'agent-2' });
+
+    const wrapper = mount(ConversationList, {
+      props: {
+        conversations: [userConv, agentConv],
+        messages: new Map(),
+        activeKey: null,
+        agents,
+      },
+    });
+    // User conversation should be visible
+    expect(wrapper.text()).toContain('Alpha Agent');
+    // Agent-to-agent conversation should be hidden
+    expect(wrapper.text()).not.toContain('Beta Agent');
+  });
+
+  it('shows agent-initiated conversations with the user', () => {
+    // agent-1 initiated conversation with user (agent-to-user)
+    const agentInitiated = makeConversation({ initiatorId: 'agent-1', targetId: 'user' });
+
+    const wrapper = mount(ConversationList, {
+      props: {
+        conversations: [agentInitiated],
+        messages: new Map(),
+        activeKey: null,
+        agents,
+      },
+    });
+    expect(wrapper.text()).toContain('Alpha Agent');
+  });
+
+  it('hides agent-to-agent conversations from messages Map', () => {
+    const agentMsgs: Message[] = [
+      { role: 'user', participantId: 'agent-1', content: 'Hello', timestamp: new Date().toISOString() },
+    ];
+
+    const wrapper = mount(ConversationList, {
+      props: {
+        conversations: [],
+        messages: new Map([['agent-1__agent-2', agentMsgs]]),
+        activeKey: null,
+        agents,
+      },
+    });
+    // Should not show agent-to-agent conversation from messages map
+    expect(wrapper.text()).toContain('No conversations yet');
+  });
 });

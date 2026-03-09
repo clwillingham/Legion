@@ -35,6 +35,8 @@ const entries = computed<ConversationEntry[]>(() => {
 
   // Build entries from conversations loaded from the session.
   for (const conv of props.conversations) {
+    // Only show conversations where the user is a participant
+    if (conv.initiatorId !== 'user' && conv.targetId !== 'user') continue;
     const key = `${conv.initiatorId}__${conv.targetId}`;
     // Determine which side is the agent
     const agentId = conv.initiatorId === 'user' ? conv.targetId : conv.initiatorId;
@@ -58,6 +60,8 @@ const entries = computed<ConversationEntry[]>(() => {
     if (result.find(e => e.key === key)) continue;
     const parts = key.split('__');
     if (parts.length < 2) continue;
+    // Only show conversations where the user is a participant
+    if (!parts.includes('user')) continue;
     // Works for both user__agentId and agentId__user keys
     const agentId = parts[0] === 'user' ? parts[1] : parts[0];
     const agent = props.agents.find(a => a.id === agentId);
