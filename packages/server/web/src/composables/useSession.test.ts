@@ -16,8 +16,12 @@ class MockWebSocket {
   constructor(_url: string) {
     lastCreatedWS = this;
   }
-  send(data: string) { this.sent.push(data); }
-  close() { this.readyState = MockWebSocket.CLOSED; }
+  send(data: string) {
+    this.sent.push(data);
+  }
+  close() {
+    this.readyState = MockWebSocket.CLOSED;
+  }
 }
 
 beforeEach(() => {
@@ -138,7 +142,7 @@ describe('useSession', () => {
     });
 
     const msgs = messages.get('user__agent-1') ?? [];
-    const assistantMsgs = msgs.filter(m => m.role === 'assistant');
+    const assistantMsgs = msgs.filter((m) => m.role === 'assistant');
     expect(assistantMsgs).toHaveLength(1);
     expect(assistantMsgs[0].content).toBe('Hello! How can I help?');
     expect(assistantMsgs[0].participantId).toBe('agent-1');
@@ -337,7 +341,12 @@ describe('useSession', () => {
               initiatorId: 'user',
               targetId: 'agent-1',
               messages: [
-                { role: 'user', participantId: 'user', content: 'hello', timestamp: '2025-01-01T00:00:00Z' },
+                {
+                  role: 'user',
+                  participantId: 'user',
+                  content: 'hello',
+                  timestamp: '2025-01-01T00:00:00Z',
+                },
               ],
               createdAt: '2025-01-01T00:00:00Z',
             },

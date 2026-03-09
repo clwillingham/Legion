@@ -36,10 +36,7 @@ export { Session } from './communication/Session.js';
 export type { SessionData } from './communication/Session.js';
 
 // --- Runtime ---
-export type {
-  RuntimeContext,
-  RuntimeResult,
-} from './runtime/ParticipantRuntime.js';
+export type { RuntimeContext, RuntimeResult } from './runtime/ParticipantRuntime.js';
 export { ParticipantRuntime } from './runtime/ParticipantRuntime.js';
 export { AgentRuntime } from './runtime/AgentRuntime.js';
 export { MockRuntime } from './runtime/MockRuntime.js';
@@ -72,10 +69,7 @@ export {
   listApprovalsTool,
   collectiveTools,
 } from './tools/collective-tools.js';
-export {
-  approvalResponseTool,
-  approvalTools,
-} from './tools/approval-tools.js';
+export { approvalResponseTool, approvalTools } from './tools/approval-tools.js';
 export {
   createAgentTool,
   modifyAgentTool,
@@ -202,8 +196,16 @@ export {
 // --- Authorization ---
 export type { ApprovalRequest, ApprovalStatus } from './authorization/ApprovalRequest.js';
 export { createApprovalRequest } from './authorization/ApprovalRequest.js';
-export type { ApprovalDecision, ApprovalRecord, ApprovalListFilter } from './authorization/ApprovalLog.js';
-export { ApprovalLog, createApprovalRecordId, ApprovalRecordSchema } from './authorization/ApprovalLog.js';
+export type {
+  ApprovalDecision,
+  ApprovalRecord,
+  ApprovalListFilter,
+} from './authorization/ApprovalLog.js';
+export {
+  ApprovalLog,
+  createApprovalRecordId,
+  ApprovalRecordSchema,
+} from './authorization/ApprovalLog.js';
 export type { ApprovalHandler } from './authorization/AuthEngine.js';
 export { AuthEngine } from './authorization/AuthEngine.js';
 export type {

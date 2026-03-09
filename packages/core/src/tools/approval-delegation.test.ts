@@ -821,7 +821,11 @@ describe('communicate tool — conversationRef in result data', () => {
       session: {
         data: { id: 'test-session' },
         collective: { get: () => codingAgent },
-        send: async () => ({ status: 'error', error: 'Something went wrong', response: 'Error occurred' }),
+        send: async () => ({
+          status: 'error',
+          error: 'Something went wrong',
+          response: 'Error occurred',
+        }),
       },
       pendingApprovalRegistry: registry,
       communicationDepth: 0,

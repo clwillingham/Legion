@@ -347,6 +347,9 @@ export class AgentRuntime extends ParticipantRuntime {
             );
             // Replace the approval_pending message (instead of appending a duplicate).
             // Search backwards for the message with approval_pending tool results.
+            // Safe because each conversation has at most one pending batch at a time
+            // (the conversation lock prevents concurrent sends, and the registry is
+            // keyed by conversationId with store() replacing existing entries).
             const messages = context.conversation.getMessages();
             let pendingIdx = -1;
             for (let i = messages.length - 1; i >= 0; i--) {

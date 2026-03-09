@@ -55,9 +55,8 @@ describe('Conversation', () => {
       const { ToolRegistry } = await import('../tools/ToolRegistry.js');
       const { Config } = await import('../config/Config.js');
       const { AuthEngine } = await import('../authorization/AuthEngine.js');
-      const { PendingApprovalRegistry } = await import(
-        '../authorization/PendingApprovalRegistry.js'
-      );
+      const { PendingApprovalRegistry } =
+        await import('../authorization/PendingApprovalRegistry.js');
 
       const eventBus = new EventBus();
       const context = {
@@ -122,9 +121,9 @@ describe('Conversation', () => {
       const conv = makeConversation();
       await conv.appendMessage(createMessage('user', 'user', 'only'));
 
-      await expect(
-        conv.replaceMessage(5, createMessage('user', 'user', 'bad')),
-      ).rejects.toThrow('out of bounds');
+      await expect(conv.replaceMessage(5, createMessage('user', 'user', 'bad'))).rejects.toThrow(
+        'out of bounds',
+      );
     });
 
     it('persists tool calls and tool results in messages', async () => {

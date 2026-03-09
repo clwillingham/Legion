@@ -126,4 +126,37 @@ export class Collective {
   get size(): number {
     return this.participants.size;
   }
+
+  /**
+   * Read a participant directly from disk, bypassing the cache.
+   * Returns undefined if the file doesn't exist.
+   * Also updates the in-memory cache if found.
+   */
+  async getFromDisk(id: string): Promise<AnyParticipantConfig | undefined> {
+    const filePath = `collective/participants/${id}.json`;
+    if (await this.storage.exists(filePath)) {
+      const raw = await this.storage.readJSON(filePath);
+      const config = AnyParticipantConfigSchema.parse(raw);
+      this.participants.set(config.id, config);
+      return config;
+    }
+    return undefined;
+  }
+
+  /**
+   * List all participants directly from disk, bypassing the cache.
+   * Also refreshes the in-memory cache.
+   */
+  async listFromDisk(filter?: { type?: string; status?: string }): Promise<AnyParticipantConfig[]> {
+    await this.load();
+    return this.list(filter);
+  }
+
+  /**
+   * Refresh the in-memory cache from disk.
+   * Alias for load() that makes the intent clearer.
+   */
+  async refresh(): Promise<void> {
+    await this.load();
+  }
 }

@@ -37,10 +37,7 @@ export const communicateTool: Tool = {
     required: ['participantId', 'message'],
   } as JSONSchema,
 
-  async execute(
-    args: unknown,
-    context: RuntimeContext,
-  ): Promise<ToolResult> {
+  async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
     const { participantId, message } = args as {
       participantId: string;
       message: string;
@@ -67,8 +64,7 @@ export const communicateTool: Tool = {
     // (callerId → targetId). If that conversation currently has pending
     // approvals in the registry, return them without sending a new message.
     const callerParticipantId = context.participant.id;
-    const conversationId =
-      `${callerParticipantId}__${participantId}`;
+    const conversationId = `${callerParticipantId}__${participantId}`;
 
     if (context.pendingApprovalRegistry.hasPending(conversationId)) {
       const batch = context.pendingApprovalRegistry.get(conversationId)!;
@@ -86,19 +82,13 @@ export const communicateTool: Tool = {
     }
 
     try {
-      const result = await session.send(
-        callerParticipantId,
-        participantId,
-        message,
-        undefined,
-        {
-          ...context,
-          // Downstream agent will see this as the calling participant
-          callingParticipantId: callerParticipantId,
-          // communicationDepth is incremented by Session/Conversation
-          communicationDepth: context.communicationDepth + 1,
-        },
-      );
+      const result = await session.send(callerParticipantId, participantId, message, undefined, {
+        ...context,
+        // Downstream agent will see this as the calling participant
+        callingParticipantId: callerParticipantId,
+        // communicationDepth is incremented by Session/Conversation
+        communicationDepth: context.communicationDepth + 1,
+      });
 
       // Surface pending approvals as a structured tool result
       if (result.status === 'approval_required' && result.pendingApprovals) {
@@ -125,8 +115,7 @@ export const communicateTool: Tool = {
         error: result.error,
       };
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
       return {
         status: 'error',
         error: `Failed to communicate with ${participantId}: ${errorMessage}`,

@@ -146,7 +146,7 @@ function registerWSHandler() {
         break;
       case 'approval:resolved':
         pendingApprovals.value = pendingApprovals.value.filter(
-          a => a.requestId !== data['requestId'],
+          (a) => a.requestId !== data['requestId'],
         );
         break;
       case 'agent:message': {
@@ -195,12 +195,14 @@ function registerWSHandler() {
           }
 
           // If the conversation isn't in our list yet, refresh from server
-          if (!conversations.value.some(c => {
-            const key = c.name
-              ? `${c.initiatorId}__${c.targetId}__${c.name}`
-              : `${c.initiatorId}__${c.targetId}`;
-            return key === convKey;
-          })) {
+          if (
+            !conversations.value.some((c) => {
+              const key = c.name
+                ? `${c.initiatorId}__${c.targetId}__${c.name}`
+                : `${c.initiatorId}__${c.targetId}`;
+              return key === convKey;
+            })
+          ) {
             // Will be picked up by loadConversations
             loadConversationsBackground();
           }

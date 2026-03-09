@@ -150,7 +150,7 @@ export class Session {
     const filePath = `sessions/${this.data.id}/conversations/${parts.join('__')}.json`;
 
     try {
-      return await this.storage.readJSON(filePath) as ConversationData;
+      return (await this.storage.readJSON(filePath)) as ConversationData;
     } catch {
       return null;
     }
@@ -168,15 +168,14 @@ export class Session {
       if (!file.endsWith('.json')) continue;
 
       try {
-        const data = await this.storage.readJSON<ConversationData>(
-          `${conversationsDir}/${file}`,
+        const data = await this.storage.readJSON<ConversationData>(`${conversationsDir}/${file}`);
+        const key = this.conversationKey(data.initiatorId, data.targetId, data.name);
+        const conversation = new Conversation(
+          data,
+          this.storage,
+          this.runtimeRegistry,
+          this.eventBus,
         );
-        const key = this.conversationKey(
-          data.initiatorId,
-          data.targetId,
-          data.name,
-        );
-        const conversation = new Conversation(data, this.storage, this.runtimeRegistry, this.eventBus);
         this.conversations.set(key, conversation);
       } catch {
         // Skip corrupted conversation files

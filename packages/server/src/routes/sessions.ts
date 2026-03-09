@@ -3,7 +3,10 @@ import type { Workspace } from '@legion-collective/core';
 import { Session } from '@legion-collective/core';
 import type { LegionServer } from '../server.js';
 
-export async function sessionRoutes(fastify: FastifyInstance, opts: { workspace: Workspace; getServer: () => LegionServer }): Promise<void> {
+export async function sessionRoutes(
+  fastify: FastifyInstance,
+  opts: { workspace: Workspace; getServer: () => LegionServer },
+): Promise<void> {
   const { workspace, getServer } = opts;
 
   fastify.get('/sessions', async () => {
@@ -62,7 +65,7 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { workspace:
       return reply.code(404).send({ error: `Session not found: ${id}` });
     }
     await session.loadAllConversations();
-    return session.listConversations().map(c => c.data);
+    return session.listConversations().map((c) => c.data);
   });
 
   fastify.get('/sessions/:id/conversations/:convId/messages', async (request, reply) => {
@@ -84,7 +87,7 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { workspace:
     }
     await session.loadAllConversations();
 
-    const conversation = session.listConversations().find(c => {
+    const conversation = session.listConversations().find((c) => {
       const key = [c.data.initiatorId, c.data.targetId];
       if (c.data.name) key.push(c.data.name);
       return key.join('__') === convId;
@@ -142,7 +145,9 @@ export async function sessionRoutes(fastify: FastifyInstance, opts: { workspace:
     const server = getServer();
     let session = server.session;
     if (!session || session.data.id !== id) {
-      return reply.code(400).send({ error: 'Session is not the active session. Create or resume it first.' });
+      return reply
+        .code(400)
+        .send({ error: 'Session is not the active session. Create or resume it first.' });
     }
 
     const result = await session.send(

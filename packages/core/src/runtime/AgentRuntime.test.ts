@@ -653,7 +653,9 @@ async function buildApprovalHarness(provider: ScriptedProvider): Promise<Approva
   return { session, provider, tmpDir, storage, baseContext };
 }
 
-async function readApprovalPersistedConversation(harness: ApprovalHarness): Promise<ConversationData> {
+async function readApprovalPersistedConversation(
+  harness: ApprovalHarness,
+): Promise<ConversationData> {
   const sessionId = harness.session.data.id;
   const conversationsDir = resolve(
     harness.tmpDir,
@@ -685,9 +687,7 @@ describe('AgentRuntime approval_pending persistence', () => {
     // Expected on disk: user message, assistant message with toolCalls,
     // then a tool result message with approval_pending status.
     const provider = new ScriptedProvider([
-      toolCallResponse([
-        { id: 'tc-1', name: 'guarded_tool', arguments: { action: 'deploy' } },
-      ]),
+      toolCallResponse([{ id: 'tc-1', name: 'guarded_tool', arguments: { action: 'deploy' } }]),
     ]);
 
     harness = await buildApprovalHarness(provider);
@@ -811,9 +811,7 @@ describe('AgentRuntime approval_pending persistence', () => {
     // Scenario: LLM calls guarded_tool -> approval_pending persisted -> resume called ->
     // approval_pending message is REPLACED (not duplicated)
     const provider = new ScriptedProvider([
-      toolCallResponse([
-        { id: 'tc-1', name: 'guarded_tool', arguments: { action: 'deploy' } },
-      ]),
+      toolCallResponse([{ id: 'tc-1', name: 'guarded_tool', arguments: { action: 'deploy' } }]),
       textResponse('Deployment complete'),
     ]);
 

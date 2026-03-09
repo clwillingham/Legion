@@ -9,12 +9,12 @@ export async function collectiveRoutes(fastify: FastifyInstance, opts: { workspa
     const filter: { type?: 'agent' | 'user' | 'mock'; status?: 'active' | 'retired' } = {};
     if (type === 'agent' || type === 'user' || type === 'mock') filter.type = type;
     if (status === 'active' || status === 'retired') filter.status = status;
-    return workspace.collective.list(filter);
+    return workspace.collective.listFromDisk(filter);
   });
 
   fastify.get('/collective/participants/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
-    const participant = workspace.collective.get(id);
+    const participant = await workspace.collective.getFromDisk(id);
     if (!participant) {
       return reply.code(404).send({ error: `Participant not found: ${id}` });
     }

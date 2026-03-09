@@ -63,16 +63,19 @@ describe('ChatPanel', () => {
     expect(wrapper.text()).toContain('Select a conversation or start a new one');
   });
 
-  it('renders a user message when message:sent event arrives', async () => {
+  it('renders a user message when conversation:updated event arrives', async () => {
     const wrapper = mount(ChatPanel);
 
     simulateWSMessage({
-      type: 'message:sent',
+      type: 'conversation:updated',
       data: {
-        fromParticipantId: 'user',
-        toParticipantId: 'ur-agent',
-        content: 'Hello agent!',
-        timestamp: new Date().toISOString(),
+        conversationId: 'user__ur-agent',
+        message: {
+          role: 'user',
+          participantId: 'user',
+          content: 'Hello agent!',
+          timestamp: new Date().toISOString(),
+        },
       },
       timestamp: new Date().toISOString(),
     });
