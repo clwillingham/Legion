@@ -70,13 +70,6 @@ const awaitingAgentResponseConvId = ref<string | null>(null);
 // WS handler registered exactly once
 let handlerRegistered = false;
 
-function addMessage(convKey: string, msg: Omit<Message, 'toolCalls' | 'toolResults'>) {
-  if (!messages.has(convKey)) {
-    messages.set(convKey, []);
-  }
-  messages.get(convKey)!.push(msg as Message);
-}
-
 /**
  * Re-derive pendingApprovals from all messages across all conversations.
  * Called after message replacements to ensure approval state stays in sync.
