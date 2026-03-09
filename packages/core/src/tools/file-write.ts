@@ -48,8 +48,8 @@ export const fileWriteTool: Tool = {
       return { status: 'error', error: 'Content was not received. This could be because the input was empty or too large' };
     }
 
-    // Use the workspace root from context.storage (correctly scoped to the workspace)
-    const workspaceRoot = context.storage.resolve('.');
+    // Resolve the workspace root from context (distinct from storage which is scoped to .legion/)
+    const workspaceRoot = context.workspaceRoot;
 
     const absolutePath = isAbsolute(filePath)
       ? filePath

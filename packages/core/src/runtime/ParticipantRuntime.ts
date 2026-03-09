@@ -38,8 +38,15 @@ export interface RuntimeContext {
   /** Event bus for emitting observable events */
   eventBus: EventBus;
 
-  /** Workspace storage for persistence */
+  /** Workspace storage for persistence (scoped to .legion/) */
   storage: Storage;
+
+  /**
+   * The actual workspace root directory (absolute path).
+   * Distinct from `storage` which is scoped to `.legion/`.
+   * File tools use this to resolve user-facing paths correctly.
+   */
+  workspaceRoot: string;
 
   /** Authorization engine for tool call approval */
   authEngine: AuthEngine;

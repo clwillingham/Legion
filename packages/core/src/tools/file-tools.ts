@@ -22,8 +22,10 @@ import type { RuntimeContext } from '../runtime/ParticipantRuntime.js';
 // ── helpers ────────────────────────────────────────────────────
 
 /** Resolve a user-supplied path and reject anything outside the workspace. */
-function resolveSafe(filePath: string): { absolute: string; workspaceRoot: string } | ToolResult {
-  const workspaceRoot = process.cwd();
+function resolveSafe(
+  filePath: string,
+  workspaceRoot: string,
+): { absolute: string; workspaceRoot: string } | ToolResult {
   const absolute = isAbsolute(filePath) ? filePath : resolve(workspaceRoot, filePath);
   if (!absolute.startsWith(workspaceRoot)) {
     return { status: 'error', error: 'Access denied: path is outside the workspace.' };
@@ -52,11 +54,11 @@ export const fileAnalyzeTool: Tool = {
     required: ['path'],
   } as JSONSchema,
 
-  async execute(args: unknown, _context: RuntimeContext): Promise<ToolResult> {
+  async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
     const { path: filePath } = args as { path: string };
     if (!filePath) return { status: 'error', error: 'path is required.' };
 
-    const resolved = resolveSafe(filePath);
+    const resolved = resolveSafe(filePath, context.workspaceRoot);
     if (isError(resolved)) return resolved;
 
     try {
@@ -130,14 +132,14 @@ export const directoryListTool: Tool = {
     required: [],
   } as JSONSchema,
 
-  async execute(args: unknown, _context: RuntimeContext): Promise<ToolResult> {
+  async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
     const {
       path: dirPath = '.',
       depth = 1,
       includeHidden = false,
     } = args as { path?: string; depth?: number; includeHidden?: boolean };
 
-    const resolved = resolveSafe(dirPath);
+    const resolved = resolveSafe(dirPath, context.workspaceRoot);
     if (isError(resolved)) return resolved;
 
     try {
@@ -234,7 +236,7 @@ export const fileSearchTool: Tool = {
     required: ['pattern'],
   } as JSONSchema,
 
-  async execute(args: unknown, _context: RuntimeContext): Promise<ToolResult> {
+  async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
     const {
       pattern,
       path: searchPath = '.',
@@ -243,7 +245,7 @@ export const fileSearchTool: Tool = {
 
     if (!pattern) return { status: 'error', error: 'pattern is required.' };
 
-    const resolved = resolveSafe(searchPath);
+    const resolved = resolveSafe(searchPath, context.workspaceRoot);
     if (isError(resolved)) return resolved;
 
     try {
@@ -361,7 +363,7 @@ export const fileGrepTool: Tool = {
     required: ['query'],
   } as JSONSchema,
 
-  async execute(args: unknown, _context: RuntimeContext): Promise<ToolResult> {
+  async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
     const {
       query,
       path: searchPath = '.',
@@ -382,7 +384,7 @@ export const fileGrepTool: Tool = {
 
     if (!query) return { status: 'error', error: 'query is required.' };
 
-    const resolved = resolveSafe(searchPath);
+    const resolved = resolveSafe(searchPath, context.workspaceRoot);
     if (isError(resolved)) return resolved;
 
     let regex: RegExp;
@@ -553,13 +555,13 @@ export const fileAppendTool: Tool = {
     required: ['path', 'content'],
   } as JSONSchema,
 
-  async execute(args: unknown, _context: RuntimeContext): Promise<ToolResult> {
+  async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
     const { path: filePath, content } = args as { path: string; content: string };
 
     if (!filePath) return { status: 'error', error: 'path is required.' };
     if (content === undefined || content === null) return { status: 'error', error: 'content is required.' };
 
-    const resolved = resolveSafe(filePath);
+    const resolved = resolveSafe(filePath, context.workspaceRoot);
     if (isError(resolved)) return resolved;
 
     try {
@@ -598,7 +600,7 @@ export const fileEditTool: Tool = {
     required: ['path', 'oldString', 'newString'],
   } as JSONSchema,
 
-  async execute(args: unknown, _context: RuntimeContext): Promise<ToolResult> {
+  async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
     const { path: filePath, oldString, newString } = args as {
       path: string; oldString: string; newString: string;
     };
@@ -609,7 +611,7 @@ export const fileEditTool: Tool = {
       return { status: 'error', error: 'newString is required (use empty string to delete).' };
     }
 
-    const resolved = resolveSafe(filePath);
+    const resolved = resolveSafe(filePath, context.workspaceRoot);
     if (isError(resolved)) return resolved;
 
     try {
@@ -663,11 +665,11 @@ export const fileDeleteTool: Tool = {
     required: ['path'],
   } as JSONSchema,
 
-  async execute(args: unknown, _context: RuntimeContext): Promise<ToolResult> {
+  async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
     const { path: filePath } = args as { path: string };
     if (!filePath) return { status: 'error', error: 'path is required.' };
 
-    const resolved = resolveSafe(filePath);
+    const resolved = resolveSafe(filePath, context.workspaceRoot);
     if (isError(resolved)) return resolved;
 
     try {
@@ -700,16 +702,16 @@ export const fileMoveTool: Tool = {
     required: ['source', 'destination'],
   } as JSONSchema,
 
-  async execute(args: unknown, _context: RuntimeContext): Promise<ToolResult> {
+  async execute(args: unknown, context: RuntimeContext): Promise<ToolResult> {
     const { source, destination } = args as { source: string; destination: string };
 
     if (!source) return { status: 'error', error: 'source is required.' };
     if (!destination) return { status: 'error', error: 'destination is required.' };
 
-    const resolvedSrc = resolveSafe(source);
+    const resolvedSrc = resolveSafe(source, context.workspaceRoot);
     if (isError(resolvedSrc)) return resolvedSrc;
 
-    const resolvedDst = resolveSafe(destination);
+    const resolvedDst = resolveSafe(destination, context.workspaceRoot);
     if (isError(resolvedDst)) return resolvedDst;
 
     try {

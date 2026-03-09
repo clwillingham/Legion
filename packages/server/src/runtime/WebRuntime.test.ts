@@ -15,6 +15,7 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
     config: {} as RuntimeContext['config'],
     eventBus: {} as RuntimeContext['eventBus'],
     storage: {} as RuntimeContext['storage'],
+    workspaceRoot: '/test-workspace',
     authEngine: {} as RuntimeContext['authEngine'],
     pendingApprovalRegistry: {} as RuntimeContext['pendingApprovalRegistry'],
     ...overrides,

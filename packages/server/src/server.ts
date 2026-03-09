@@ -103,6 +103,7 @@ export class LegionServer {
       config: this.workspace.config,
       eventBus: this.workspace.eventBus,
       storage: this.workspace.storage,
+      workspaceRoot: this.workspace.root,
       authEngine: this.authEngine,
       pendingApprovalRegistry: this.workspace.pendingApprovalRegistry,
     };

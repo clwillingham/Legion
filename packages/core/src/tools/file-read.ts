@@ -36,7 +36,7 @@ export const fileReadTool: Tool = {
 
   async execute(
     args: unknown,
-    _context: RuntimeContext,
+    context: RuntimeContext,
   ): Promise<ToolResult> {
     const { path: filePath, startLine, endLine } = args as {
       path: string;
@@ -48,8 +48,7 @@ export const fileReadTool: Tool = {
       return { status: 'error', error: 'path is required.' };
     }
 
-    // For now, resolve from cwd. Workspace root will be injected later.
-    const workspaceRoot = process.cwd();
+    const workspaceRoot = context.workspaceRoot;
 
     const absolutePath = isAbsolute(filePath)
       ? filePath
