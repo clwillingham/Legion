@@ -4,5 +4,13 @@
       "type": "github-models",
       "provider": "github-models"
     }
-  }
+  },
+  "limits": {},
+  "authorization": {
+    "toolPolicies": {}
+  },
+  "processManagement": {
+    "blocklist": []
+  },
+  "logLevel": "debug"
 }

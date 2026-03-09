@@ -9,6 +9,8 @@ const links = [
   { path: '/collective', label: 'Collective', icon: '👥' },
   { path: '/sessions', label: 'Sessions', icon: '📋' },
   { path: '/processes', label: 'Processes', icon: '⚙️' },
+  { path: '/files', label: 'Files', icon: '📁' },
+  { path: '/config', label: 'Config', icon: '🔧' },
 ];
 
 const currentPath = computed(() => route.path);

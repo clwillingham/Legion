@@ -4,6 +4,9 @@
   "name": "Test Agent",
   "description": "Writes and runs tests across all Legion packages. The only agent authorized to execute npm run test.",
   "tools": {
+    "*": {
+      "mode": "requires_approval"
+    },
     "communicate": {
       "mode": "auto"
     },
@@ -20,7 +23,22 @@
       "mode": "requires_approval"
     },
     "process_exec": {
-      "mode": "requires_approval"
+      "rules": [
+        {
+          "mode": "requires_approval",
+          "scope": {
+            "argPatterns": {
+              "command": "npm run test"
+            }
+          }
+        }
+      ]
+    },
+    "process_status": {
+      "mode": "auto"
+    },
+    "process_list": {
+      "mode": "auto"
     }
   },
   "approvalAuthority": {},

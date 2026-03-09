@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Workspace } from '@legion-collective/core';
-import { readFile, writeFile, stat, mkdir } from 'node:fs/promises';
-import { resolve, dirname, relative } from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
+import { resolve, relative } from 'node:path';
 
 export async function fileRoutes(fastify: FastifyInstance, opts: { workspace: Workspace }): Promise<void> {
   const { workspace } = opts;
@@ -36,23 +36,13 @@ export async function fileRoutes(fastify: FastifyInstance, opts: { workspace: Wo
     }
   });
 
-  fastify.put('/files/content', async (request, reply) => {
-    const { path: filePath, content } = request.body as { path?: string; content?: string };
-    if (!filePath || content === undefined) {
-      return reply.code(400).send({ error: 'path and content are required' });
-    }
-    const target = resolve(workspace.root, filePath);
-    if (!target.startsWith(workspace.root)) {
-      return reply.code(403).send({ error: 'Path outside workspace' });
-    }
-    try {
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, content, 'utf-8');
-      return { status: 'ok', path: relative(workspace.root, target) };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      return reply.code(500).send({ error });
-    }
+  // File writes must go through the tool gateway so authorization policies
+  // (auto / requires_approval / deny) are enforced uniformly. Direct writes
+  // via this route are intentionally not supported.
+  fastify.put('/files/content', async (_request, reply) => {
+    return reply.code(501).send({
+      error: 'Direct file writes are not supported. Use POST /api/tools/file_write/execute to write files through the authorization layer.',
+    });
   });
 }
 

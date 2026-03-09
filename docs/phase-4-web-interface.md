@@ -1,7 +1,7 @@
 # Phase 4: Web Interface — Design Document
 
 **Created**: March 3, 2026
-**Status**: Milestones 4.1, 4.2, 4.3, 4.4, and 4.5 complete
+**Status**: ALL MILESTONES COMPLETE ✅ (4.1–4.7)
 
 ---
 
@@ -721,18 +721,18 @@ const routes = [
 7. ✅ Tests: 18 ProcessList tests, 13 ProcessOutput tests, 6 ProcessesView tests (37 total)
 8. ~~Interactive process input~~ — deferred to Phase 6
 
-### 4.6: Workspace File Explorer
+### 4.6: Workspace File Explorer ✅
 
-1. File tree component (recursive, using `directory_list` tool via REST)
-2. File content viewer with Shiki syntax highlighting
-3. File editor — saves go through `file_write` tool via REST API, full authorization flow
-4. File metadata display (size, modified date)
+1. ✅ File tree component (recursive, using `directory_list` tool via REST)
+2. ✅ File content viewer with Shiki syntax highlighting
+3. ✅ File editor — saves go through `file_write` tool via REST API, full authorization flow
+4. ~~File metadata display (size, modified date)~~ — deferred (metadata accessible via FileViewer)
 
-### 4.7: Workspace Configuration Editor
+### 4.7: Workspace Configuration Editor ✅
 
-1. Fetch workspace config via REST
-2. Schema-driven form rendering (from ConfigSchema)
-3. Save config changes
+1. ✅ Fetch workspace config via REST
+2. ✅ Schema-driven form rendering (defaultProvider, defaultAgent, logLevel, limits, authorization, processManagement)
+3. ✅ Save config changes
 4. ~~Global config editor~~ — deferred to Phase 6 (requires token auth + multi-user)
 
 ---

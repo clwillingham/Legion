@@ -33,7 +33,7 @@ export const fileWriteTool: Tool = {
 
   async execute(
     args: unknown,
-    _context: RuntimeContext,
+    context: RuntimeContext,
   ): Promise<ToolResult> {
     const { path: filePath, content } = args as {
       path: string;
@@ -48,8 +48,8 @@ export const fileWriteTool: Tool = {
       return { status: 'error', error: 'Content was not received. This could be because the input was empty or too large' };
     }
 
-    // For now, resolve from cwd. Workspace root will be injected later.
-    const workspaceRoot = process.cwd();
+    // Use the workspace root from context.storage (correctly scoped to the workspace)
+    const workspaceRoot = context.storage.resolve('.');
 
     const absolutePath = isAbsolute(filePath)
       ? filePath
