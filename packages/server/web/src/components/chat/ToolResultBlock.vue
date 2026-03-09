@@ -42,19 +42,6 @@ const statusIcon = computed(() => {
   }
 });
 
-// For communicate tool results, try to parse conversationRef
-const conversationRef = computed(() => {
-  if (props.toolResult.tool !== 'communicate' || props.toolResult.status !== 'success') {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(props.toolResult.result as string);
-    return parsed.conversationRef ?? null;
-  } catch {
-    return null;
-  }
-});
-
 const displayResult = computed(() => {
   const raw = props.toolResult.result;
   if (typeof raw !== 'string') return JSON.stringify(raw, null, 2);
@@ -66,10 +53,6 @@ const displayResult = computed(() => {
     return raw;
   }
 });
-
-const emit = defineEmits<{
-  'navigate-conversation': [conversationRef: string];
-}>();
 </script>
 
 <template>
@@ -84,9 +67,6 @@ const emit = defineEmits<{
     >
       <span>{{ statusIcon }}</span>
       <span class="font-mono">{{ toolResult.tool }}</span>
-      <span v-if="conversationRef" class="text-blue-400 text-xs ml-1"
-        >&rarr; nested conversation</span
-      >
       <span class="ml-auto text-gray-600">{{ expanded ? '\u25B2' : '\u25BC' }}</span>
     </button>
     <div v-if="expanded" class="px-2 pb-2 border-t border-gray-700/50">
@@ -94,13 +74,6 @@ const emit = defineEmits<{
         class="text-gray-500 mt-1 overflow-x-auto whitespace-pre-wrap break-words max-h-48 overflow-y-auto"
         >{{ displayResult }}</pre
       >
-      <button
-        v-if="conversationRef"
-        class="mt-1 text-blue-400 hover:text-blue-300 underline text-xs"
-        @click.stop="emit('navigate-conversation', conversationRef)"
-      >
-        View conversation &rarr;
-      </button>
     </div>
   </div>
 </template>
