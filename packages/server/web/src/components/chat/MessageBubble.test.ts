@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import MessageBubble from './MessageBubble.vue';
 import type { Message } from '../../composables/useSession.js';
+
+vi.mock('../../composables/useSession.js');
 
 function userMessage(content: string): Message {
   return {
@@ -87,8 +89,10 @@ describe('MessageBubble', () => {
     const wrapper = mount(MessageBubble, {
       props: { message: msg },
     });
-    // Should render CommunicateCallBlock placeholder, not generic ToolCallBlock
-    expect(wrapper.text()).toContain('communicate-call-placeholder');
+    // Should render CommunicateCallBlock (shows '→ agent-2'), not generic ToolCallBlock
+    expect(wrapper.text()).toContain('→ agent-2');
+    // Should NOT use the generic ToolCallBlock (which would show just 'communicate' without the arrow)
+    expect(wrapper.html()).not.toContain('tool-call-block');
   });
 
   it('renders generic ToolCallBlock for non-communicate tool call', () => {
