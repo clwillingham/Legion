@@ -353,15 +353,10 @@ export function useSession() {
   }
 
   function respondToAgent(conversationId: string, message: string) {
-    // Add user's reply to the local messages map optimistically
-    // (user is the target in an agent-initiated conv, so role is 'assistant')
-    addMessage(conversationId, {
-      role: 'assistant',
-      participantId: 'user',
-      content: message,
-      timestamp: new Date().toISOString(),
-    });
-    // WebRuntime is no longer waiting
+    // Do NOT add the message optimistically — like sendMessage, we rely on
+    // conversation:updated from the server. Optimistic adds cause a double-entry
+    // because the server also fires conversation:updated when it appends the
+    // user's response (as 'assistant' role, participantId 'user') to the log.
     awaitingAgentResponseConvId.value = null;
     send({
       type: 'user:response',
