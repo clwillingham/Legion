@@ -80,4 +80,44 @@ describe('MessageBubble', () => {
     });
     expect(wrapper.text()).toContain('read_file');
   });
+
+  it('renders custom component for communicate tool call', () => {
+    const msg = assistantMessage('Talking to agent');
+    msg.toolCalls = [{ id: 'tc-1', tool: 'communicate', args: { participantId: 'agent-2', message: 'hi' } }];
+    const wrapper = mount(MessageBubble, {
+      props: { message: msg },
+    });
+    // Should render CommunicateCallBlock placeholder, not generic ToolCallBlock
+    expect(wrapper.text()).toContain('communicate-call-placeholder');
+  });
+
+  it('renders generic ToolCallBlock for non-communicate tool call', () => {
+    const msg = assistantMessage('Reading file');
+    msg.toolCalls = [{ id: 'tc-1', tool: 'file_read', args: { path: '/tmp/test' } }];
+    const wrapper = mount(MessageBubble, {
+      props: { message: msg },
+    });
+    // Should render generic ToolCallBlock with tool name
+    expect(wrapper.text()).toContain('file_read');
+    expect(wrapper.text()).not.toContain('communicate-call-placeholder');
+  });
+
+  it('renders custom component for communicate tool result', () => {
+    const msg: Message = {
+      role: 'user',
+      participantId: 'agent-1',
+      content: '',
+      timestamp: new Date().toISOString(),
+      toolResults: [{
+        toolCallId: 'tc-1',
+        tool: 'communicate',
+        status: 'success',
+        result: JSON.stringify({ response: 'Done!', conversationRef: 'agent-1__agent-2' }),
+      }],
+    };
+    const wrapper = mount(MessageBubble, {
+      props: { message: msg },
+    });
+    expect(wrapper.text()).toContain('communicate-result-placeholder');
+  });
 });

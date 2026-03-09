@@ -2,6 +2,7 @@
 import type { Message } from '../../composables/useSession.js';
 import ToolCallBlock from './ToolCallBlock.vue';
 import ToolResultBlock from './ToolResultBlock.vue';
+import { resolveToolCallComponent, resolveToolResultComponent } from './toolComponentRegistry.js';
 
 const props = defineProps<{
   message: Message;
@@ -24,12 +25,19 @@ const isToolResultMessage = !props.message.content && props.message.toolResults?
 <template>
   <!-- Tool result messages: don't render as a bubble, just show results inline -->
   <div v-if="isToolResultMessage" class="space-y-1.5 pl-4">
-    <ToolResultBlock
-      v-for="tr in message.toolResults"
-      :key="tr.toolCallId"
-      :tool-result="tr"
-      @navigate-conversation="(ref: string) => emit('navigate-conversation', ref)"
-    />
+    <template v-for="tr in message.toolResults" :key="tr.toolCallId">
+      <component
+        :is="resolveToolResultComponent(tr.tool)"
+        v-if="resolveToolResultComponent(tr.tool)"
+        :tool-result="tr"
+        :parent-message="message"
+      />
+      <ToolResultBlock
+        v-else
+        :tool-result="tr"
+        @navigate-conversation="(ref: string) => emit('navigate-conversation', ref)"
+      />
+    </template>
   </div>
 
   <!-- Normal messages (with or without tool calls) -->
@@ -45,15 +53,30 @@ const isToolResultMessage = !props.message.content && props.message.toolResults?
         {{ message.content }}
       </div>
       <div v-if="message.toolCalls?.length" class="mt-2 space-y-1.5">
-        <ToolCallBlock v-for="tc in message.toolCalls" :key="tc.id" :tool-call="tc" />
+        <template v-for="tc in message.toolCalls" :key="tc.id">
+          <component
+            :is="resolveToolCallComponent(tc.tool)"
+            v-if="resolveToolCallComponent(tc.tool)"
+            :tool-call="tc"
+            :parent-message="message"
+          />
+          <ToolCallBlock v-else :tool-call="tc" />
+        </template>
       </div>
       <div v-if="message.toolResults?.length" class="mt-2 space-y-1.5">
-        <ToolResultBlock
-          v-for="tr in message.toolResults"
-          :key="tr.toolCallId"
-          :tool-result="tr"
-          @navigate-conversation="(ref: string) => emit('navigate-conversation', ref)"
-        />
+        <template v-for="tr in message.toolResults" :key="tr.toolCallId">
+          <component
+            :is="resolveToolResultComponent(tr.tool)"
+            v-if="resolveToolResultComponent(tr.tool)"
+            :tool-result="tr"
+            :parent-message="message"
+          />
+          <ToolResultBlock
+            v-else
+            :tool-result="tr"
+            @navigate-conversation="(ref: string) => emit('navigate-conversation', ref)"
+          />
+        </template>
       </div>
       <div class="text-xs mt-1 opacity-50">
         {{ new Date(message.timestamp).toLocaleTimeString() }}
