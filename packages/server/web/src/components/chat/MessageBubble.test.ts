@@ -122,6 +122,8 @@ describe('MessageBubble', () => {
     const wrapper = mount(MessageBubble, {
       props: { message: msg },
     });
-    expect(wrapper.text()).toContain('communicate-result-placeholder');
+    // CommunicateResultBlock renders '✓communicate' (success checkmark) not generic ToolResultBlock
+    expect(wrapper.text()).toContain('Done!');
+    expect(wrapper.find('.text-green-400').exists()).toBe(true);
   });
 });
